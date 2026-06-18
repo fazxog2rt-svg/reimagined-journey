@@ -1,15 +1,29 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #2563EB;
+  --color-primary-dark: #1d4ed8;
+  --color-emerald: #10B981;
+  --color-emerald-dark: #059669;
+
+  --animate-blob: blob 7s infinite;
+  --animate-glow: glow 2s ease-in-out infinite;
+  --animate-shimmer: shimmer 3s linear infinite;
+  --animate-float: float 4s ease-in-out infinite;
+}
 
 @layer base {
-  :root {
-    --background: 248 250 252;
-    --foreground: 15 23 42;
+  *, *::before, *::after {
+    box-sizing: border-box;
   }
-  .dark {
-    --background: 15 23 42;
-    --foreground: 248 250 252;
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    transition: background-color 0.3s, color 0.3s;
   }
 }
 
@@ -23,20 +37,9 @@
 }
 
 @keyframes blob {
-  0% { transform: translate(0px, 0px) scale(1); }
+  0%, 100% { transform: translate(0px, 0px) scale(1); }
   33% { transform: translate(30px, -50px) scale(1.1); }
   66% { transform: translate(-20px, 20px) scale(0.9); }
-  100% { transform: translate(0px, 0px) scale(1); }
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes slideUp {
-  from { opacity: 0; transform: translateY(40px); }
-  to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes glow {
@@ -49,20 +52,21 @@
   100% { background-position: 200% center; }
 }
 
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-12px); }
+}
+
 .animate-blob {
   animation: blob 7s infinite;
 }
 
-.animate-fadeIn {
-  animation: fadeIn 0.6s ease-out forwards;
-}
-
-.animate-slideUp {
-  animation: slideUp 0.8s ease-out forwards;
-}
-
 .animate-glow {
   animation: glow 2s ease-in-out infinite;
+}
+
+.animate-float {
+  animation: float 4s ease-in-out infinite;
 }
 
 .shimmer-text {
