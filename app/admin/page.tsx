@@ -1,47 +1,52 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { GraduationCap, LogIn, LogOut, Users, Plus, Edit2, Trash2, Download, Shield, Search, X, Check, Moon, Sun } from 'lucide-react'
+import { motion } from 'framer-motion'
+import { LogOut, Users, Plus, Search, Edit2, Trash2, Download, X, Check } from 'lucide-react'
 
 interface Student {
   id: number
   name: string
   nisn: string
   nis: string
-  status: string
-  kelas?: string
+  status: 'LULUS'
+}
+
+interface EditingStudent {
+  id: number
+  name: string
+  nisn: string
+  nis: string
 }
 
 export default function AdminPage() {
+  const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [token, setToken] = useState('')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [loginError, setLoginError] = useState('')
   const [loginLoading, setLoginLoading] = useState(false)
+
   const [students, setStudents] = useState<Student[]>([])
-  const [search, setSearch] = useState('')
-  const [dark, setDark] = useState(false)
-  const [editStudent, setEditStudent] = useState<Student | null>(null)
-  const [addMode, setAddMode] = useState(false)
-  const [form, setForm] = useState({ name: '', nisn: '', nis: '', kelas: '' })
-  const [saving, setSaving] = useState(false)
-  const [deleteId, setDeleteId] = useState<number | null>(null)
-  const [msg, setMsg] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [editingStudent, setEditingStudent] = useState<EditingStudent | null>(null)
+  const [newStudent, setNewStudent] = useState({ name: '', nisn: '', nis: '' })
+  const [loadingStudents, setLoadingStudents] = useState(false)
 
   useEffect(() => {
-    const saved = localStorage.getItem('theme')
-    if (saved === 'dark') { setDark(true); document.documentElement.classList.add('dark') }
-    const savedToken = sessionStorage.getItem('adminToken')
-    if (savedToken) { setToken(savedToken); fetchStudents(savedToken) }
+    const savedToken = localStorage.getItem('adminToken')
+    if (savedToken) {
+      setToken(savedToken)
+      setIsLoggedIn(true)
+    }
   }, [])
 
-  const toggleDark = () => {
-    const next = !dark
-    setDark(next)
-    if (next) { document.documentElement.classList.add('dark'); localStorage.setItem('theme', 'dark') }
-    else { document.documentElement.classList.remove('dark'); localStorage.setItem('theme', 'light') }
-  }
+  useEffect(() => {
+    if (isLoggedIn && token) {
+      fetchStudents()
+    }
+  }, [isLoggedIn, token])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -54,126 +59,146 @@ export default function AdminPage() {
         body: JSON.stringify({ username, password }),
       })
       const data = await res.json()
-      if (!res.ok) { setLoginError(data.error); return }
-      setToken(data.token)
-      sessionStorage.setItem('adminToken', data.token)
-      await fetchStudents(data.token)
+      if (!res.ok) {
+        setLoginError(data.error)
+      } else {
+        localStorage.setItem('adminToken', data.token)
+        setToken(data.token)
+        setIsLoggedIn(true)
+      }
     } catch {
-      setLoginError('Gagal terhubung ke server.')
+      setLoginError('Terjadi kesalahan jaringan')
     } finally {
       setLoginLoading(false)
     }
   }
 
-  const fetchStudents = async (t: string) => {
+  const fetchStudents = async () => {
+    setLoadingStudents(true)
     try {
-      const res = await fetch('/api/admin/students', { headers: { Authorization: `Bearer ${t}` } })
-      if (!res.ok) { setToken(''); return }
+      const res = await fetch('/api/admin/students', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
       const data = await res.json()
-      setStudents(data.students || data)
-    } catch { setToken('') }
+      if (res.ok) setStudents(data.students)
+    } finally {
+      setLoadingStudents(false)
+    }
+  }
+
+  const handleAddStudent = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const res = await fetch('/api/admin/students', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(newStudent),
+    })
+    if (res.ok) {
+      setNewStudent({ name: '', nisn: '', nis: '' })
+      setShowAddForm(false)
+      fetchStudents()
+    }
+  }
+
+  const handleEditStudent = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingStudent) return
+    const res = await fetch('/api/admin/students', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(editingStudent),
+    })
+    if (res.ok) {
+      setEditingStudent(null)
+      fetchStudents()
+    }
+  }
+
+  const handleDeleteStudent = async (id: number) => {
+    if (!confirm('Hapus siswa ini?')) return
+    await fetch('/api/admin/students', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ id }),
+    })
+    fetchStudents()
   }
 
   const handleLogout = () => {
+    localStorage.removeItem('adminToken')
     setToken('')
-    sessionStorage.removeItem('adminToken')
+    setIsLoggedIn(false)
     setStudents([])
   }
 
-  const showMsg = (m: string) => { setMsg(m); setTimeout(() => setMsg(''), 3000) }
-
-  const handleSave = async () => {
-    setSaving(true)
-    try {
-      if (addMode) {
-        const res = await fetch('/api/admin/students', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify(form),
-        })
-        if (res.ok) { await fetchStudents(token); setAddMode(false); setForm({ name: '', nisn: '', nis: '', kelas: 'XII' }); showMsg('Siswa berhasil ditambahkan!') }
-      } else if (editStudent) {
-        const res = await fetch('/api/admin/students', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ ...form, id: editStudent.id }),
-        })
-        if (res.ok) { await fetchStudents(token); setEditStudent(null); showMsg('Data berhasil diperbarui!') }
-      }
-    } catch { showMsg('Terjadi kesalahan.') }
-    finally { setSaving(false) }
-  }
-
-  const handleDelete = async (id: number) => {
-    try {
-      const res = await fetch('/api/admin/students', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ id }),
-      })
-      if (res.ok) { await fetchStudents(token); setDeleteId(null); showMsg('Siswa berhasil dihapus!') }
-    } catch { showMsg('Terjadi kesalahan.') }
-  }
-
   const exportCSV = () => {
-    const rows = [['No', 'Nama', 'NISN', 'NIS', 'Kelas', 'Status']]
-    students.forEach((s, i) => rows.push([String(i + 1), s.name, s.nisn, s.nis, s.kelas || '', s.status]))
-    const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n')
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const header = 'ID,Nama,NISN,NIS,Status\n'
+    const rows = students.map(s => `${s.id},${s.name},${s.nisn},${s.nis},${s.status}`).join('\n')
+    const blob = new Blob([header + rows], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = 'data_siswa_kelulusan_2026.csv'
+    a.download = 'data_siswa_2026.csv'
     a.click()
     URL.revokeObjectURL(url)
   }
 
-  const filtered = students.filter(s =>
-    s.name.toLowerCase().includes(search.toLowerCase()) ||
-    s.nisn.includes(search) ||
-    s.nis.toLowerCase().includes(search.toLowerCase())
+  const filteredStudents = students.filter(s =>
+    s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    s.nisn.includes(searchQuery) ||
+    s.nis.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
-  const openEdit = (s: Student) => {
-    setEditStudent(s)
-    setAddMode(false)
-    setForm({ name: s.name, nisn: s.nisn, nis: s.nis, kelas: s.kelas || '' })
-  }
-
-  if (!token) {
+  if (!isLoggedIn) {
     return (
-      <div className={`min-h-screen flex items-center justify-center px-4 ${dark ? 'bg-slate-900 text-white' : 'bg-slate-50 text-slate-900'}`}>
-        <div className="absolute top-4 right-4">
-          <button onClick={toggleDark} className={`p-2 rounded-xl ${dark ? 'bg-slate-700' : 'bg-slate-200'}`}>
-            {dark ? <Sun className="w-5 h-5 text-yellow-400" /> : <Moon className="w-5 h-5" />}
-          </button>
-        </div>
-        <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }}
-          className={`w-full max-w-md p-8 rounded-3xl shadow-2xl border ${dark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-          <div className="text-center mb-8">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-600 to-emerald-500 flex items-center justify-center mx-auto mb-4">
-              <Shield className="w-8 h-8 text-white" />
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 to-blue-950 flex items-center justify-center p-6">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-slate-800 rounded-3xl shadow-2xl p-8 w-full max-w-sm border border-slate-700"
+        >
+          <div className="text-center mb-6">
+            <div className="w-14 h-14 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-3">
+              <Users className="w-7 h-7 text-white" />
             </div>
-            <h1 className="text-2xl font-black">Admin Dashboard</h1>
-            <p className={`text-sm mt-1 ${dark ? 'text-slate-400' : 'text-slate-500'}`}>Sistem Pengumuman Kelulusan 2026</p>
+            <h1 className="text-xl font-bold text-white">Admin Panel</h1>
+            <p className="text-slate-400 text-sm mt-1">Sistem Pengumuman Kelulusan 2026</p>
           </div>
+
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label className="block text-sm font-semibold mb-2">Username</label>
-              <input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="admin"
-                className={`w-full px-4 py-3 rounded-xl border-2 outline-none transition-all ${dark ? 'bg-slate-700 border-slate-600 text-white placeholder-slate-400 focus:border-blue-500' : 'bg-slate-50 border-slate-200 focus:border-blue-500'}`} />
+              <label className="block text-sm font-medium text-slate-300 mb-1">Username</label>
+              <input
+                type="text"
+                value={username}
+                onChange={e => setUsername(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl bg-slate-700 border border-slate-600 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="admin"
+                required
+              />
             </div>
             <div>
-              <label className="block text-sm font-semibold mb-2">Password</label>
-              <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••"
-                className={`w-full px-4 py-3 rounded-xl border-2 outline-none transition-all ${dark ? 'bg-slate-700 border-slate-600 text-white placeholder-slate-400 focus:border-blue-500' : 'bg-slate-50 border-slate-200 focus:border-blue-500'}`} />
+              <label className="block text-sm font-medium text-slate-300 mb-1">Password</label>
+              <input
+                type="password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl bg-slate-700 border border-slate-600 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="••••••••"
+                required
+              />
             </div>
-            {loginError && <div className="px-3 py-2 rounded-xl bg-red-50 border border-red-200 text-red-600 text-sm">⚠️ {loginError}</div>}
-            <button type="submit" disabled={loginLoading}
-              className="w-full py-3 rounded-xl font-bold text-white flex items-center justify-center gap-2 disabled:opacity-70"
-              style={{ background: 'linear-gradient(135deg, #2563EB, #10B981)' }}>
-              {loginLoading ? <span className="animate-spin">⟳</span> : <LogIn className="w-5 h-5" />}
-              {loginLoading ? 'Masuk...' : 'MASUK'}
+            {loginError && (
+              <div className="bg-red-900/30 border border-red-800 text-red-300 rounded-xl px-4 py-3 text-sm">
+                {loginError}
+              </div>
+            )}
+            <button
+              type="submit"
+              disabled={loginLoading}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition disabled:opacity-60"
+            >
+              {loginLoading ? 'Masuk...' : 'Masuk'}
             </button>
           </form>
         </motion.div>
@@ -182,181 +207,217 @@ export default function AdminPage() {
   }
 
   return (
-    <div className={`min-h-screen ${dark ? 'bg-slate-900 text-white' : 'bg-slate-50 text-slate-900'}`}>
-      {/* Toast */}
-      <AnimatePresence>
-        {msg && (
-          <motion.div initial={{ opacity: 0, y: -50 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-            className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-6 py-3 rounded-xl bg-emerald-600 text-white font-medium shadow-lg flex items-center gap-2">
-            <Check className="w-4 h-4" /> {msg}
-          </motion.div>
-        )}
-      </AnimatePresence>
-
+    <div className="min-h-screen bg-slate-100 dark:bg-slate-900">
       {/* Header */}
-      <div className={`sticky top-0 z-40 px-6 py-4 border-b backdrop-blur-md flex items-center justify-between ${dark ? 'bg-slate-900/80 border-slate-700' : 'bg-white/80 border-slate-200'}`}>
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-emerald-500 flex items-center justify-center">
-            <GraduationCap className="w-5 h-5 text-white" />
+      <header className="bg-white dark:bg-slate-800 shadow-sm border-b border-slate-200 dark:border-slate-700">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 bg-blue-600 rounded-lg flex items-center justify-center">
+              <Users className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h1 className="font-bold text-slate-800 dark:text-slate-100">Admin Dashboard</h1>
+              <p className="text-xs text-slate-500">Kelulusan 2026</p>
+            </div>
           </div>
-          <div>
-            <div className="font-bold text-sm">Admin Dashboard</div>
-            <div className="text-xs text-blue-600">Kelulusan Kelas XII 2026</div>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <button onClick={toggleDark} className={`p-2 rounded-xl ${dark ? 'bg-slate-700' : 'bg-slate-100'}`}>
-            {dark ? <Sun className="w-4 h-4 text-yellow-400" /> : <Moon className="w-4 h-4" />}
-          </button>
-          <button onClick={handleLogout} className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium ${dark ? 'bg-slate-700 hover:bg-slate-600' : 'bg-slate-100 hover:bg-slate-200'}`}>
-            <LogOut className="w-4 h-4" /> Logout
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-2 text-slate-600 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 transition"
+          >
+            <LogOut className="w-4 h-4" />
+            <span className="text-sm">Logout</span>
           </button>
         </div>
-      </div>
+      </header>
 
       <div className="max-w-7xl mx-auto px-6 py-8">
         {/* Stats */}
         <div className="grid grid-cols-3 gap-4 mb-8">
           {[
-            { label: 'Total Siswa', value: students.length, icon: Users, color: 'blue' },
-            { label: 'Total Lulus', value: students.filter(s => s.status === 'LULUS').length, icon: Check, color: 'emerald' },
-            { label: 'Persentase', value: students.length > 0 ? `${Math.round(students.filter(s => s.status === 'LULUS').length / students.length * 100)}%` : '0%', icon: GraduationCap, color: 'purple' },
+            { label: 'Total Siswa', value: students.length, color: 'bg-blue-500' },
+            { label: 'Status Lulus', value: students.filter(s => s.status === 'LULUS').length, color: 'bg-emerald-500' },
+            { label: 'Persentase', value: students.length > 0 ? '100%' : '0%', color: 'bg-purple-500' },
           ].map((stat, i) => (
-            <div key={i} className={`p-5 rounded-2xl border shadow-sm ${dark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-              <div className={`w-10 h-10 rounded-xl mb-3 flex items-center justify-center ${stat.color === 'blue' ? 'bg-blue-100 text-blue-600' : stat.color === 'emerald' ? 'bg-emerald-100 text-emerald-600' : 'bg-purple-100 text-purple-600'}`}>
-                <stat.icon className="w-5 h-5" />
-              </div>
-              <div className="text-2xl font-black">{stat.value}</div>
-              <div className={`text-sm ${dark ? 'text-slate-400' : 'text-slate-500'}`}>{stat.label}</div>
+            <div key={i} className="bg-white dark:bg-slate-800 rounded-2xl p-5 shadow-sm border border-slate-200 dark:border-slate-700">
+              <div className={`w-8 h-8 ${stat.color} rounded-lg mb-3`} />
+              <div className="text-2xl font-black text-slate-800 dark:text-slate-100">{stat.value}</div>
+              <div className="text-sm text-slate-500 dark:text-slate-400">{stat.label}</div>
             </div>
           ))}
         </div>
 
-        {/* Table controls */}
-        <div className={`rounded-2xl border shadow-sm overflow-hidden ${dark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-          <div className={`px-6 py-4 border-b flex flex-wrap gap-3 items-center justify-between ${dark ? 'border-slate-700' : 'border-slate-100'}`}>
-            <h2 className="font-bold">Data Siswa</h2>
-            <div className="flex flex-wrap gap-2">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Cari siswa..."
-                  className={`pl-9 pr-4 py-2 text-sm rounded-xl border outline-none ${dark ? 'bg-slate-700 border-slate-600 text-white placeholder-slate-400' : 'bg-slate-50 border-slate-200 focus:border-blue-500'}`} />
-              </div>
-              <button onClick={() => { setAddMode(true); setEditStudent(null); setForm({ name: '', nisn: '', nis: '', kelas: '' }) }}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium text-white"
-                style={{ background: 'linear-gradient(135deg, #2563EB, #10B981)' }}>
-                <Plus className="w-4 h-4" /> Tambah
+        {/* Controls */}
+        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+          <div className="flex flex-col sm:flex-row gap-4 mb-6">
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Cari nama, NISN, atau NIS..."
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={exportCSV}
+                className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-medium transition"
+              >
+                <Download className="w-4 h-4" />
+                Export CSV
               </button>
-              <button onClick={exportCSV}
-                className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium border ${dark ? 'border-slate-600 text-slate-200 hover:bg-slate-700' : 'border-slate-200 text-slate-700 hover:bg-slate-50'}`}>
-                <Download className="w-4 h-4" /> Export CSV
+              <button
+                onClick={() => setShowAddForm(true)}
+                className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium transition"
+              >
+                <Plus className="w-4 h-4" />
+                Tambah
               </button>
             </div>
           </div>
 
-          {/* Add/Edit form */}
-          <AnimatePresence>
-            {(addMode || editStudent) && (
-              <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
-                className={`border-b overflow-hidden ${dark ? 'border-slate-700 bg-slate-750' : 'border-slate-100 bg-blue-50'}`}>
-                <div className="px-6 py-4">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="font-bold">{addMode ? 'Tambah Siswa Baru' : 'Edit Data Siswa'}</h3>
-                    <button onClick={() => { setAddMode(false); setEditStudent(null) }}>
-                      <X className="w-5 h-5" />
-                    </button>
-                  </div>
-                  <div className="grid sm:grid-cols-2 gap-3 mb-4">
-                    {[
-                      { key: 'name', label: 'Nama Lengkap', placeholder: 'Muhammad Azzam' },
-                      { key: 'nisn', label: 'NISN', placeholder: '1000000001' },
-                      { key: 'nis', label: 'NIS', placeholder: 'XII001' },
-                      { key: 'kelas', label: 'Kelas', placeholder: 'XII IPA 1' },
-                    ].map(field => (
-                      <div key={field.key}>
-                        <label className="block text-xs font-semibold mb-1">{field.label}</label>
-                        <input value={form[field.key as keyof typeof form]} onChange={e => setForm(f => ({ ...f, [field.key]: e.target.value }))}
-                          placeholder={field.placeholder}
-                          className={`w-full px-3 py-2 text-sm rounded-xl border outline-none ${dark ? 'bg-slate-700 border-slate-600 text-white' : 'bg-white border-slate-200 focus:border-blue-500'}`} />
-                      </div>
-                    ))}
-                  </div>
-                  <button onClick={handleSave} disabled={saving}
-                    className="px-6 py-2 rounded-xl font-bold text-white text-sm disabled:opacity-70"
-                    style={{ background: 'linear-gradient(135deg, #2563EB, #10B981)' }}>
-                    {saving ? 'Menyimpan...' : 'Simpan'}
-                  </button>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+          {/* Add Form */}
+          {showAddForm && (
+            <motion.form
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              onSubmit={handleAddStudent}
+              className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-4 mb-4 border border-blue-200 dark:border-blue-800"
+            >
+              <h3 className="font-semibold text-slate-800 dark:text-slate-100 mb-3">Tambah Siswa Baru</h3>
+              <div className="grid grid-cols-3 gap-3 mb-3">
+                <input
+                  type="text"
+                  placeholder="Nama lengkap"
+                  value={newStudent.name}
+                  onChange={e => setNewStudent(p => ({ ...p, name: e.target.value }))}
+                  className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+                <input
+                  type="text"
+                  placeholder="NISN"
+                  value={newStudent.nisn}
+                  onChange={e => setNewStudent(p => ({ ...p, nisn: e.target.value }))}
+                  className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+                <input
+                  type="text"
+                  placeholder="NIS"
+                  value={newStudent.nis}
+                  onChange={e => setNewStudent(p => ({ ...p, nis: e.target.value }))}
+                  className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+              <div className="flex gap-2">
+                <button type="submit" className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium">
+                  <Check className="w-3 h-3" /> Simpan
+                </button>
+                <button type="button" onClick={() => setShowAddForm(false)} className="flex items-center gap-1 px-3 py-1.5 bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg text-sm">
+                  <X className="w-3 h-3" /> Batal
+                </button>
+              </div>
+            </motion.form>
+          )}
+
+          {/* Edit Form */}
+          {editingStudent && (
+            <motion.form
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              onSubmit={handleEditStudent}
+              className="bg-yellow-50 dark:bg-yellow-900/20 rounded-xl p-4 mb-4 border border-yellow-200 dark:border-yellow-800"
+            >
+              <h3 className="font-semibold text-slate-800 dark:text-slate-100 mb-3">Edit Siswa</h3>
+              <div className="grid grid-cols-3 gap-3 mb-3">
+                <input
+                  type="text"
+                  value={editingStudent.name}
+                  onChange={e => setEditingStudent(p => p ? { ...p, name: e.target.value } : p)}
+                  className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  type="text"
+                  value={editingStudent.nisn}
+                  onChange={e => setEditingStudent(p => p ? { ...p, nisn: e.target.value } : p)}
+                  className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  type="text"
+                  value={editingStudent.nis}
+                  onChange={e => setEditingStudent(p => p ? { ...p, nis: e.target.value } : p)}
+                  className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button type="submit" className="flex items-center gap-1 px-3 py-1.5 bg-yellow-600 text-white rounded-lg text-sm font-medium">
+                  <Check className="w-3 h-3" /> Update
+                </button>
+                <button type="button" onClick={() => setEditingStudent(null)} className="flex items-center gap-1 px-3 py-1.5 bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg text-sm">
+                  <X className="w-3 h-3" /> Batal
+                </button>
+              </div>
+            </motion.form>
+          )}
 
           {/* Table */}
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className={dark ? 'bg-slate-700/50' : 'bg-slate-50'}>
-                  {['No', 'Nama', 'NISN', 'NIS', 'Kelas', 'Status', 'Aksi'].map(h => (
-                    <th key={h} className={`px-4 py-3 text-left font-semibold text-xs uppercase tracking-wider ${dark ? 'text-slate-400' : 'text-slate-500'}`}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((s, i) => (
-                  <tr key={s.id} className={`border-t transition-colors ${dark ? 'border-slate-700 hover:bg-slate-700/30' : 'border-slate-100 hover:bg-slate-50'}`}>
-                    <td className="px-4 py-3 text-slate-400">{i + 1}</td>
-                    <td className="px-4 py-3 font-medium">{s.name}</td>
-                    <td className="px-4 py-3 font-mono text-blue-600">{s.nisn}</td>
-                    <td className="px-4 py-3 font-mono">{s.nis}</td>
-                    <td className="px-4 py-3">{s.kelas}</td>
-                    <td className="px-4 py-3">
-                      <span className="px-2 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">{s.status}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex gap-2">
-                        <button onClick={() => openEdit(s)} className="p-1.5 rounded-lg bg-blue-100 text-blue-600 hover:bg-blue-200 transition-colors">
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button onClick={() => setDeleteId(s.id)} className="p-1.5 rounded-lg bg-red-100 text-red-600 hover:bg-red-200 transition-colors">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
+          {loadingStudents ? (
+            <div className="text-center py-12 text-slate-500">Memuat data...</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 dark:border-slate-700">
+                    <th className="text-left py-3 px-2 text-slate-500 dark:text-slate-400 font-medium">No</th>
+                    <th className="text-left py-3 px-2 text-slate-500 dark:text-slate-400 font-medium">Nama</th>
+                    <th className="text-left py-3 px-2 text-slate-500 dark:text-slate-400 font-medium">NISN</th>
+                    <th className="text-left py-3 px-2 text-slate-500 dark:text-slate-400 font-medium">NIS</th>
+                    <th className="text-left py-3 px-2 text-slate-500 dark:text-slate-400 font-medium">Status</th>
+                    <th className="text-left py-3 px-2 text-slate-500 dark:text-slate-400 font-medium">Aksi</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-            {filtered.length === 0 && (
-              <div className={`py-12 text-center ${dark ? 'text-slate-400' : 'text-slate-500'}`}>
-                Tidak ada data siswa ditemukan.
-              </div>
-            )}
-          </div>
-          <div className={`px-6 py-3 border-t text-xs ${dark ? 'border-slate-700 text-slate-400' : 'border-slate-100 text-slate-500'}`}>
-            Menampilkan {filtered.length} dari {students.length} siswa
-          </div>
+                </thead>
+                <tbody>
+                  {filteredStudents.map((s, i) => (
+                    <tr key={s.id} className="border-b border-slate-100 dark:border-slate-700/50 hover:bg-slate-50 dark:hover:bg-slate-700/30">
+                      <td className="py-3 px-2 text-slate-500">{i + 1}</td>
+                      <td className="py-3 px-2 font-medium text-slate-800 dark:text-slate-100">{s.name}</td>
+                      <td className="py-3 px-2 text-slate-600 dark:text-slate-300 font-mono text-xs">{s.nisn}</td>
+                      <td className="py-3 px-2 text-slate-600 dark:text-slate-300">{s.nis}</td>
+                      <td className="py-3 px-2">
+                        <span className="inline-flex items-center gap-1 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 text-xs font-bold px-2 py-1 rounded-full">
+                          {s.status}
+                        </span>
+                      </td>
+                      <td className="py-3 px-2">
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => setEditingStudent({ id: s.id, name: s.name, nisn: s.nisn, nis: s.nis })}
+                            className="p-1.5 text-blue-600 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-lg transition"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteStudent(s.id)}
+                            className="p-1.5 text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {filteredStudents.length === 0 && (
+                <div className="text-center py-12 text-slate-400">Tidak ada data ditemukan</div>
+              )}
+            </div>
+          )}
         </div>
       </div>
-
-      {/* Delete confirm modal */}
-      <AnimatePresence>
-        {deleteId !== null && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-            <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} exit={{ scale: 0.9 }}
-              className={`p-6 rounded-2xl shadow-2xl max-w-sm w-full ${dark ? 'bg-slate-800' : 'bg-white'}`}>
-              <h3 className="font-bold text-lg mb-2">Hapus Siswa?</h3>
-              <p className={`text-sm mb-6 ${dark ? 'text-slate-400' : 'text-slate-500'}`}>
-                Data siswa akan dihapus secara permanen. Tindakan ini tidak dapat dibatalkan.
-              </p>
-              <div className="flex gap-3">
-                <button onClick={() => setDeleteId(null)} className={`flex-1 py-2.5 rounded-xl font-medium border ${dark ? 'border-slate-600 hover:bg-slate-700' : 'border-slate-200 hover:bg-slate-50'}`}>Batal</button>
-                <button onClick={() => handleDelete(deleteId!)} className="flex-1 py-2.5 rounded-xl font-medium text-white bg-red-600 hover:bg-red-700">Hapus</button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   )
 }
