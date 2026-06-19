@@ -18,5 +18,12 @@ export async function PUT(req: NextRequest) {
   if (body.schoolName !== undefined) siteSettings.schoolName = String(body.schoolName).slice(0, 200)
   if (body.principalName !== undefined) siteSettings.principalName = String(body.principalName).slice(0, 200)
   if (body.principalNip !== undefined) siteSettings.principalNip = String(body.principalNip).slice(0, 50)
+  if (body.logoUrl !== undefined) siteSettings.logoUrl = String(body.logoUrl).slice(0, 500)
+  if (body.primaryColor !== undefined) siteSettings.primaryColor = String(body.primaryColor).slice(0, 20)
+  if (body.accessStartTime !== undefined) siteSettings.accessStartTime = String(body.accessStartTime).slice(0, 10)
+  if (body.accessEndTime !== undefined) siteSettings.accessEndTime = String(body.accessEndTime).slice(0, 10)
+  if (body.accessTimeEnabled !== undefined) siteSettings.accessTimeEnabled = Boolean(body.accessTimeEnabled)
+  if (body.waBotEnabled !== undefined) siteSettings.waBotEnabled = Boolean(body.waBotEnabled)
+  if (body.waPhoneNumber !== undefined) siteSettings.waPhoneNumber = String(body.waPhoneNumber).slice(0, 20)
   return NextResponse.json({ settings: siteSettings })
 }

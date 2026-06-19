@@ -3,13 +3,14 @@ export interface Student {
   name: string;
   nisn: string;
   nis: string;
-  status: 'LULUS' | 'TIDAK LULUS';
+  status: 'LULUS' | 'TIDAK LULUS' | 'Proses Susulan';
+  kelas?: string;
   keterangan?: string;
   phone?: string;
 }
 
 export const students: Student[] = [
-  { id: 1, name: 'Muhammad Azzam Fadhil', nisn: '1000000001', nis: 'XII001', status: 'LULUS' },
+  { id: 1, name: 'Muhammad Azzam Fadhil', nisn: '1000000001', nis: 'XII001', status: 'LULUS', kelas: 'XII IPA 1' },
   { id: 2, name: 'Muhammad Zayyan Hafizh', nisn: '1000000002', nis: 'XII002', status: 'LULUS' },
   { id: 3, name: 'Ahmad Rayyan Malik', nisn: '1000000003', nis: 'XII003', status: 'LULUS' },
   { id: 4, name: 'Muhammad Faris Azka', nisn: '1000000004', nis: 'XII004', status: 'LULUS' },

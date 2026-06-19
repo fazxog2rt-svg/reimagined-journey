@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useCallback, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { GraduationCap, Download, ArrowLeft, CheckCircle, Share2, Copy, Award, Printer, Image, X, Sun, Moon } from 'lucide-react'
+import { GraduationCap, Download, ArrowLeft, CheckCircle, Share2, Copy, Award, Printer, Image, X, Sun, Moon, Link } from 'lucide-react'
 import { useTheme } from 'next-themes'
 
 interface Student {
@@ -11,8 +11,15 @@ interface Student {
   name: string
   nisn: string
   nis: string
-  status: 'LULUS' | 'TIDAK LULUS'
+  status: 'LULUS' | 'TIDAK LULUS' | 'Proses Susulan'
+  kelas?: string
   keterangan?: string
+}
+
+interface SiteSettings {
+  accessStartTime: string
+  accessEndTime: string
+  accessTimeEnabled: boolean
 }
 
 const QUOTES = [
@@ -53,21 +60,18 @@ function generatePhotoFrame(student: Student): string {
   canvas.height = 600
   const ctx = canvas.getContext('2d')!
 
-  // Background gradient
   const bg = ctx.createLinearGradient(0, 0, 600, 600)
   bg.addColorStop(0, '#0F172A')
   bg.addColorStop(1, '#1E3A5F')
   ctx.fillStyle = bg
   ctx.fillRect(0, 0, 600, 600)
 
-  // Border frame
   for (let i = 0; i < 4; i++) {
     ctx.strokeStyle = i % 2 === 0 ? '#2563EB' : '#10B981'
     ctx.lineWidth = 3 - i * 0.5
     ctx.strokeRect(10 + i * 8, 10 + i * 8, 580 - i * 16, 580 - i * 16)
   }
 
-  // Corner decorations
   const corners = [[30, 30], [570, 30], [30, 570], [570, 570]]
   corners.forEach(([x, y]) => {
     const g = ctx.createRadialGradient(x, y, 0, x, y, 20)
@@ -79,7 +83,6 @@ function generatePhotoFrame(student: Student): string {
     ctx.fill()
   })
 
-  // Avatar circle
   const grad = ctx.createRadialGradient(300, 195, 0, 300, 195, 80)
   grad.addColorStop(0, '#3B82F6')
   grad.addColorStop(1, '#1d4ed8')
@@ -88,7 +91,6 @@ function generatePhotoFrame(student: Student): string {
   ctx.arc(300, 195, 80, 0, Math.PI * 2)
   ctx.fill()
 
-  // Initials
   const initials = student.name.split(' ').slice(0, 2).map(n => n[0]).join('')
   ctx.fillStyle = '#FFFFFF'
   ctx.font = 'bold 52px Arial'
@@ -96,7 +98,6 @@ function generatePhotoFrame(student: Student): string {
   ctx.textBaseline = 'middle'
   ctx.fillText(initials, 300, 195)
 
-  // LULUS badge
   const badge = ctx.createLinearGradient(200, 295, 400, 325)
   badge.addColorStop(0, '#10B981')
   badge.addColorStop(1, '#059669')
@@ -108,24 +109,20 @@ function generatePhotoFrame(student: Student): string {
   ctx.font = 'bold 18px Arial'
   ctx.fillText('✓ DINYATAKAN LULUS', 300, 313)
 
-  // Name
   ctx.fillStyle = '#F8FAFC'
   ctx.font = 'bold 26px Arial'
   ctx.textBaseline = 'middle'
   const displayName = student.name.length > 24 ? student.name.substring(0, 24) + '…' : student.name
   ctx.fillText(displayName, 300, 370)
 
-  // Details
   ctx.fillStyle = '#94A3B8'
   ctx.font = '15px Arial'
   ctx.fillText(`NISN: ${student.nisn}  •  NIS: ${student.nis}`, 300, 405)
 
-  // Year
   ctx.fillStyle = '#64748B'
   ctx.font = '13px Arial'
   ctx.fillText('Tahun Ajaran 2025/2026', 300, 432)
 
-  // Bottom decoration
   const line = ctx.createLinearGradient(80, 470, 520, 470)
   line.addColorStop(0, 'transparent')
   line.addColorStop(0.5, '#2563EB')
@@ -141,7 +138,6 @@ function generatePhotoFrame(student: Student): string {
   ctx.font = '12px Arial'
   ctx.fillText('Sistem Pengumuman Kelulusan Kelas XII 2026', 300, 500)
 
-  // Stars
   ctx.fillStyle = '#F59E0B'
   ctx.font = '18px Arial'
   ctx.fillText('★ ★ ★ ★ ★', 300, 535)
@@ -156,6 +152,7 @@ function ResultContent() {
   const [student, setStudent] = useState<Student | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [timeBlocked, setTimeBlocked] = useState(false)
   const [qrDataUrl, setQrDataUrl] = useState('')
   const [quote, setQuote] = useState('')
   const [toast, setToast] = useState('')
@@ -192,35 +189,64 @@ function ResultContent() {
     if (!nisn || !nis) { router.push('/'); return }
     setQuote(QUOTES[Math.floor(Math.random() * QUOTES.length)])
 
-    fetch('/api/check', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nisn, nis }),
-    })
+    // Check time restriction
+    fetch('/api/admin/settings')
       .then(r => r.json())
-      .then(data => {
-        if (data.student) {
-          setStudent(data.student)
-          if (data.student.status === 'LULUS') {
-            triggerConfetti()
-            playSuccessSound()
+      .then((d: { settings?: SiteSettings }) => {
+        if (d.settings?.accessTimeEnabled) {
+          const now = new Date()
+          const [sh, sm] = d.settings.accessStartTime.split(':').map(Number)
+          const [eh, em] = d.settings.accessEndTime.split(':').map(Number)
+          const nowMinutes = now.getHours() * 60 + now.getMinutes()
+          const startMinutes = sh * 60 + sm
+          const endMinutes = eh * 60 + em
+          if (nowMinutes < startMinutes || nowMinutes > endMinutes) {
+            setTimeBlocked(true)
+            setLoading(false)
+            return
           }
-          import('qrcode').then(({ default: QRCode }) => {
-            QRCode.toDataURL(JSON.stringify({ nama: data.student.name, nisn: data.student.nisn, nis: data.student.nis, status: 'LULUS', tahun: '2025/2026' }), { width: 180, margin: 1 })
-              .then(url => setQrDataUrl(url))
-              .catch(() => {})
-          })
-        } else {
-          setError(data.error || 'Data tidak ditemukan')
         }
+        loadStudent()
       })
-      .catch(() => setError('Gagal memuat data'))
-      .finally(() => setLoading(false))
+      .catch(() => loadStudent())
+
+    function loadStudent() {
+      fetch('/api/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nisn, nis }),
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (data.student) {
+            setStudent(data.student)
+            if (data.student.status === 'LULUS') {
+              triggerConfetti()
+              playSuccessSound()
+            }
+            import('qrcode').then(({ default: QRCode }) => {
+              QRCode.toDataURL(JSON.stringify({ nama: data.student.name, nisn: data.student.nisn, nis: data.student.nis, status: data.student.status, tahun: '2025/2026' }), { width: 180, margin: 1 })
+                .then(url => setQrDataUrl(url))
+                .catch(() => {})
+            })
+          } else {
+            setError(data.error || 'Data tidak ditemukan')
+          }
+        })
+        .catch(() => setError('Gagal memuat data'))
+        .finally(() => setLoading(false))
+    }
   }, [nisn, nis, router, triggerConfetti])
+
+  const shortLink = typeof window !== 'undefined' ? `${window.location.origin}/s/${nis}` : `/s/${nis}`
+
+  const copyShortLink = () => {
+    navigator.clipboard.writeText(shortLink).then(() => showToast('Short link berhasil disalin!'))
+  }
 
   const shareWhatsApp = () => {
     if (!student) return
-    const url = window.location.href
+    const url = shortLink
     const text = `Alhamdulillah! 🎓 ${student.name} dinyatakan *LULUS* Tahun Ajaran 2025/2026!\n\nCek hasil kelulusan di: ${url}`
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank')
   }
@@ -246,7 +272,7 @@ function ResultContent() {
       doc.setTextColor(0, 0, 0)
       doc.setFontSize(11)
       doc.text('Yang bertanda tangan di bawah ini menyatakan bahwa:', 20, 58)
-      const fields = [['Nama Lengkap', student.name], ['NISN', student.nisn], ['NIS', student.nis], ['Status', 'LULUS'], ['Tahun Ajaran', '2025/2026']]
+      const fields: [string, string][] = [['Nama Lengkap', student.name], ['NISN', student.nisn], ['NIS', student.nis], ['Kelas', student.kelas || '-'], ['Status', student.status], ['Tahun Ajaran', '2025/2026']]
       let y = 72
       fields.forEach(([l, v]) => {
         doc.setFont('helvetica', 'bold'); doc.text(l, 30, y)
@@ -283,7 +309,7 @@ function ResultContent() {
       doc.setTextColor(255, 255, 255); doc.setFontSize(20); doc.setFont('helvetica', 'bold')
       doc.text(student.name.toUpperCase(), 148, 76, { align: 'center' })
       doc.setTextColor(200, 200, 200); doc.setFontSize(8); doc.setFont('helvetica', 'normal')
-      doc.text(`NISN: ${student.nisn}  |  NIS: ${student.nis}`, 148, 90, { align: 'center' })
+      doc.text(`NISN: ${student.nisn}  |  NIS: ${student.nis}  |  Kelas: ${student.kelas || '-'}`, 148, 90, { align: 'center' })
       doc.text('Telah menyelesaikan pendidikan dan dinyatakan', 148, 103, { align: 'center' })
       doc.setFillColor(37, 99, 235); doc.roundedRect(103, 108, 90, 16, 2, 2, 'F')
       doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(12)
@@ -323,6 +349,19 @@ function ResultContent() {
     </div>
   )
 
+  if (timeBlocked) return (
+    <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900 px-4">
+      <div className="text-center max-w-md">
+        <div className="text-6xl mb-4">🕐</div>
+        <h2 className="text-2xl font-black text-slate-800 dark:text-slate-100 mb-2">Pengumuman Belum Dibuka</h2>
+        <p className="text-slate-500 dark:text-slate-400 mb-6">Pengumuman kelulusan hanya dapat diakses pada jam yang telah ditentukan. Silakan coba lagi nanti.</p>
+        <button onClick={() => router.push('/')} className="px-6 py-3 rounded-xl font-bold text-white" style={{ background: 'linear-gradient(135deg,#2563EB,#10B981)' }}>
+          Kembali
+        </button>
+      </div>
+    </div>
+  )
+
   if (error) return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900 px-4">
       <div className="text-center max-w-md">
@@ -338,6 +377,13 @@ function ResultContent() {
 
   if (!student) return null
 
+  const isProsesSusulan = student.status === 'Proses Susulan'
+  const headerGradient = student.status === 'LULUS'
+    ? 'linear-gradient(135deg, #2563EB 0%, #10B981 100%)'
+    : isProsesSusulan
+      ? 'linear-gradient(135deg, #D97706 0%, #F59E0B 100%)'
+      : 'linear-gradient(135deg, #DC2626 0%, #EA580C 100%)'
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-emerald-50 dark:from-slate-900 dark:via-blue-950 dark:to-slate-900">
       {/* Toast */}
@@ -350,15 +396,28 @@ function ResultContent() {
         )}
       </AnimatePresence>
 
-      {/* Watermark */}
+      {/* Animated Watermark */}
       <div className="fixed inset-0 pointer-events-none z-50 overflow-hidden select-none" style={{ opacity: 0.04 }}>
         {Array.from({ length: 9 }).map((_, i) => (
-          <div key={i} className="absolute font-black text-2xl whitespace-nowrap text-slate-900 dark:text-white"
-            style={{ top: `${(i % 3) * 33 + 5}%`, left: `${Math.floor(i / 3) * 33}%`, transform: 'rotate(-30deg)' }}>
-            {student.name} • LULUS 2026
+          <div key={i}
+            className="absolute font-black text-2xl whitespace-nowrap text-slate-900 dark:text-white"
+            style={{
+              top: `${(i % 3) * 33 + 5}%`,
+              left: `${Math.floor(i / 3) * 33}%`,
+              transform: 'rotate(-30deg)',
+              animation: `watermarkDrift ${8 + i * 1.2}s ease-in-out infinite alternate`,
+            }}>
+            {student.name} • {student.status} 2026
           </div>
         ))}
       </div>
+
+      <style>{`
+        @keyframes watermarkDrift {
+          0% { transform: rotate(-30deg) translate(0px, 0px); }
+          100% { transform: rotate(-30deg) translate(12px, 8px); }
+        }
+      `}</style>
 
       {/* Nav */}
       <nav className="sticky top-0 z-40 px-6 py-4 flex items-center justify-between backdrop-blur-md bg-white/80 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-700">
@@ -373,18 +432,19 @@ function ResultContent() {
 
       <div className="max-w-2xl mx-auto px-4 py-10">
         <motion.div initial={{ opacity: 0, scale: 0.92, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} transition={{ duration: 0.6, type: 'spring' }}
-          className="rounded-3xl overflow-hidden shadow-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 animate-glow">
+          className="rounded-3xl overflow-hidden shadow-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
 
           {/* Header */}
-          <div className="relative p-8 text-center text-white overflow-hidden"
-            style={{ background: student.status === 'LULUS' ? 'linear-gradient(135deg, #2563EB 0%, #10B981 100%)' : 'linear-gradient(135deg, #DC2626 0%, #EA580C 100%)' }}>
+          <div className="relative p-8 text-center text-white overflow-hidden" style={{ background: headerGradient }}>
             <div className="absolute -top-10 -right-10 w-40 h-40 rounded-full bg-white/10" />
             <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-white/10" />
             <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 0.3, type: 'spring' }}
               className="relative w-20 h-20 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-3 backdrop-blur-sm">
               {student.status === 'LULUS'
                 ? <CheckCircle className="w-12 h-12 text-white" />
-                : <span className="text-5xl">⚠️</span>}
+                : isProsesSusulan
+                  ? <span className="text-5xl">📋</span>
+                  : <span className="text-5xl">⚠️</span>}
             </motion.div>
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
               {student.status === 'LULUS' ? (
@@ -392,6 +452,12 @@ function ResultContent() {
                   <p className="text-lg font-bold mb-1">✅ SELAMAT!</p>
                   <h1 className="text-3xl font-black tracking-wide">ANDA DINYATAKAN</h1>
                   <h2 className="text-5xl font-black tracking-widest mt-1" style={{ textShadow: '0 2px 12px rgba(0,0,0,0.3)' }}>LULUS</h2>
+                </>
+              ) : isProsesSusulan ? (
+                <>
+                  <p className="text-lg font-bold mb-1">📋 PROSES SUSULAN</p>
+                  <h1 className="text-3xl font-black tracking-wide">STATUS ANDA</h1>
+                  <h2 className="text-3xl font-black tracking-widest mt-1" style={{ textShadow: '0 2px 12px rgba(0,0,0,0.3)' }}>PROSES SUSULAN</h2>
                 </>
               ) : (
                 <>
@@ -407,11 +473,16 @@ function ResultContent() {
           <div className="p-6 md:p-8">
             {/* Student info */}
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }} className="space-y-3 mb-6">
-              {[['Nama Lengkap', student.name, false, true], ['NISN', student.nisn, true, false], ['NIS', student.nis, true, false]].map(([l, v, mono, bold]) => (
-                <div key={String(l)} className="flex items-center justify-between py-2.5 border-b border-slate-100 dark:border-slate-700">
-                  <span className="text-sm text-slate-500 dark:text-slate-400">{String(l)}</span>
+              {([
+                ['Nama Lengkap', student.name, false, true],
+                ['NISN', student.nisn, true, false],
+                ['NIS', student.nis, true, false],
+                ['Kelas', student.kelas || '-', false, false],
+              ] as [string, string, boolean, boolean][]).map(([l, v, mono]) => (
+                <div key={l} className="flex items-center justify-between py-2.5 border-b border-slate-100 dark:border-slate-700">
+                  <span className="text-sm text-slate-500 dark:text-slate-400">{l}</span>
                   <span className={`font-bold ${mono ? 'font-mono text-blue-600 dark:text-blue-400' : 'text-slate-800 dark:text-slate-100'}`}>
-                    {String(v)}
+                    {v}
                   </span>
                 </div>
               ))}
@@ -420,20 +491,55 @@ function ResultContent() {
                 <span className={`font-bold px-3 py-1 rounded-full text-sm ${
                   student.status === 'LULUS'
                     ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-400'
-                    : 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-400'
+                    : isProsesSusulan
+                      ? 'bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-400'
+                      : 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-400'
                 }`}>
                   {student.status}
                 </span>
               </div>
-              {student.status === 'TIDAK LULUS' && student.keterangan && (
+              {(student.status === 'TIDAK LULUS' || isProsesSusulan) && student.keterangan && (
                 <div className="py-2.5 border-b border-slate-100 dark:border-slate-700">
                   <span className="text-sm text-slate-500 dark:text-slate-400 block mb-1">Keterangan</span>
-                  <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl px-4 py-3 text-sm text-red-700 dark:text-red-300 font-medium">
-                    ⚠️ {student.keterangan}
+                  <div className={`border rounded-xl px-4 py-3 text-sm font-medium ${
+                    isProsesSusulan
+                      ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300'
+                      : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-700 dark:text-red-300'
+                  }`}>
+                    {isProsesSusulan ? '📋' : '⚠️'} {student.keterangan}
                   </div>
                 </div>
               )}
             </motion.div>
+
+            {/* Short link */}
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.52 }}
+              className="flex items-center gap-2 mb-5 p-3 rounded-xl bg-slate-50 dark:bg-slate-700/40 border border-slate-200 dark:border-slate-600">
+              <Link className="w-4 h-4 text-slate-400 flex-shrink-0" />
+              <span className="text-xs text-slate-500 dark:text-slate-400 font-mono flex-1 truncate">/s/{nis}</span>
+              <button onClick={copyShortLink} className="text-xs text-blue-600 dark:text-blue-400 font-medium hover:underline flex-shrink-0 flex items-center gap-1">
+                <Copy className="w-3 h-3" /> Salin
+              </button>
+            </motion.div>
+
+            {/* Proses Susulan info box */}
+            {isProsesSusulan && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }}
+                className="p-4 rounded-2xl mb-4 border-2 border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40">
+                <p className="text-lg font-black text-amber-700 dark:text-amber-400 mb-2">📋 Status: Proses Susulan</p>
+                <p className="text-sm text-amber-600 dark:text-amber-300 mb-3">
+                  Anda sedang dalam proses penyelesaian persyaratan kelulusan. Segera selesaikan kewajiban yang tersisa dan hubungi wali kelas Anda.
+                </p>
+                <div className="bg-white dark:bg-slate-800 rounded-xl p-3 text-sm space-y-1 border border-amber-200 dark:border-amber-800">
+                  <p className="font-bold text-slate-700 dark:text-slate-200">📌 Langkah selanjutnya:</p>
+                  <ul className="space-y-1 text-slate-600 dark:text-slate-300">
+                    <li>📞 Hubungi wali kelas segera</li>
+                    <li>📝 Selesaikan seluruh persyaratan yang tersisa</li>
+                    <li>🏫 Konfirmasi ke pihak sekolah setelah selesai</li>
+                  </ul>
+                </div>
+              </motion.div>
+            )}
 
             {/* Info box for TIDAK LULUS */}
             {student.status === 'TIDAK LULUS' && (() => {
@@ -445,40 +551,26 @@ function ResultContent() {
 
               return (
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }} className="space-y-3 mb-6">
-                  {/* Pesan standar sebelum wisuda */}
                   {!isWisudaDay && (
                     <div className="p-4 rounded-2xl bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800 text-sm text-orange-700 dark:text-orange-300">
                       <p className="font-bold mb-1">📋 Langkah Selanjutnya:</p>
-                      <p>Segera hubungi guru pembimbing atau wali kelas Anda untuk menyelesaikan kewajiban yang belum terpenuhi. Setelah semua persyaratan terpenuhi, kelulusan dapat diproses kembali.</p>
-                      <p className="mt-2 text-xs font-semibold">⏳ Wisuda akan berlangsung dalam <span className="text-orange-600 dark:text-orange-400">{diffDays} hari lagi</span>. Segera selesaikan sebelum terlambat!</p>
+                      <p>Segera hubungi guru pembimbing atau wali kelas Anda untuk menyelesaikan kewajiban yang belum terpenuhi.</p>
+                      <p className="mt-2 text-xs font-semibold">⏳ Wisuda akan berlangsung dalam <span className="text-orange-600 dark:text-orange-400">{diffDays} hari lagi</span>.</p>
                     </div>
                   )}
-
-                  {/* Pesan khusus saat/setelah hari wisuda */}
                   {isWisudaDay && (
                     <div className="p-5 rounded-2xl border-2 border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-950/40">
                       <p className="text-lg font-black text-red-700 dark:text-red-400 mb-2">🔔 Hari Wisuda Telah Tiba</p>
                       <p className="text-sm text-red-600 dark:text-red-300 mb-3">
-                        Hari ini, <strong>25 Juni 2026</strong>, wisuda kelas XII sedang berlangsung di <strong>The Grand Livina, Cibubur</strong>. Sayangnya, Anda belum memenuhi persyaratan kelulusan.
+                        Hari ini wisuda kelas XII sedang berlangsung. Sayangnya, Anda belum memenuhi persyaratan kelulusan.
                       </p>
-                      <div className="bg-white dark:bg-slate-800 rounded-xl p-3 text-sm space-y-2 border border-red-200 dark:border-red-800 mb-3">
-                        <p className="font-bold text-slate-700 dark:text-slate-200">📌 Yang perlu segera dilakukan:</p>
-                        <ul className="space-y-1 text-slate-600 dark:text-slate-300 list-none">
-                          <li>📞 Hubungi wali kelas <strong>SEKARANG JUGA</strong></li>
-                          <li>🏫 Datang ke sekolah setelah acara wisuda selesai</li>
-                          <li>📝 Selesaikan seluruh kewajiban yang tertunda</li>
-                          <li>📋 Ajukan permohonan penyelesaian kepada kepala sekolah</li>
-                        </ul>
-                      </div>
                       <p className="text-xs text-red-500 dark:text-red-400 font-semibold">
-                        ⚠️ Kelulusan susulan masih dapat diproses setelah semua persyaratan terpenuhi. Jangan menyerah!
+                        ⚠️ Kelulusan susulan masih dapat diproses setelah semua persyaratan terpenuhi.
                       </p>
                     </div>
                   )}
-
-                  {/* Pesan motivasi untuk yang belum lulus */}
                   <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-700/40 border border-slate-200 dark:border-slate-600 text-sm text-slate-600 dark:text-slate-300 italic text-center">
-                    &ldquo;Kegagalan bukan akhir dari segalanya. Setiap rintangan adalah kesempatan untuk bangkit lebih kuat. Terus berjuang, karena setiap usaha tidak pernah sia-sia.&rdquo;
+                    &ldquo;Kegagalan bukan akhir dari segalanya. Setiap rintangan adalah kesempatan untuk bangkit lebih kuat.&rdquo;
                   </div>
                 </motion.div>
               )

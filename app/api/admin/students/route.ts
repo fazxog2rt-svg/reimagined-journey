@@ -10,6 +10,12 @@ async function checkAuth(req: NextRequest) {
   return verifyToken(token)
 }
 
+function parseStatus(s: string): Student['status'] {
+  if (s === 'TIDAK LULUS') return 'TIDAK LULUS'
+  if (s === 'Proses Susulan') return 'Proses Susulan'
+  return 'LULUS'
+}
+
 export async function GET(req: NextRequest) {
   const payload = await checkAuth(req)
   if (!payload) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -24,7 +30,8 @@ export async function POST(req: NextRequest) {
     name: body.name,
     nisn: body.nisn,
     nis: body.nis,
-    status: body.status === 'TIDAK LULUS' ? 'TIDAK LULUS' : 'LULUS',
+    status: parseStatus(body.status),
+    ...(body.kelas ? { kelas: body.kelas } : {}),
     ...(body.keterangan ? { keterangan: body.keterangan } : {}),
     ...(body.phone ? { phone: body.phone } : {}),
   }
@@ -36,7 +43,8 @@ export async function PUT(req: NextRequest) {
   const payload = await checkAuth(req)
   if (!payload) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const body = await req.json()
-  const updated = updateStudent(body.id, body)
+  const updateData: Partial<Student> = { ...body, status: parseStatus(body.status) }
+  const updated = updateStudent(body.id, updateData)
   if (!updated) return NextResponse.json({ error: 'Student not found' }, { status: 404 })
   return NextResponse.json({ student: updated })
 }

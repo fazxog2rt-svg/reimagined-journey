@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
-import { LogOut, Users, Plus, Search, Edit2, Trash2, Download, X, Check, Activity, Settings, Upload, Send, Phone } from 'lucide-react'
+import { LogOut, Users, Plus, Search, Edit2, Trash2, Download, X, Check, Activity, Settings, Upload, Send, Phone, MessageSquare, BarChart2, Copy, Link } from 'lucide-react'
 
 const VENUE = 'The Grand Livina'
 const VENUE_LOCATION = 'Cibubur, Jawa Timur'
@@ -14,7 +14,8 @@ interface Student {
   name: string
   nisn: string
   nis: string
-  status: 'LULUS' | 'TIDAK LULUS'
+  status: 'LULUS' | 'TIDAK LULUS' | 'Proses Susulan'
+  kelas?: string
   keterangan?: string
   phone?: string
 }
@@ -24,7 +25,8 @@ interface EditingStudent {
   name: string
   nisn: string
   nis: string
-  status: 'LULUS' | 'TIDAK LULUS'
+  status: 'LULUS' | 'TIDAK LULUS' | 'Proses Susulan'
+  kelas: string
   keterangan: string
   phone: string
 }
@@ -44,9 +46,23 @@ interface SiteSettings {
   schoolName: string
   principalName: string
   principalNip: string
+  logoUrl: string
+  primaryColor: string
+  accessStartTime: string
+  accessEndTime: string
+  accessTimeEnabled: boolean
+  waBotEnabled: boolean
+  waPhoneNumber: string
 }
 
-type Tab = 'students' | 'logs' | 'settings' | 'undangan'
+interface WaBotState {
+  status: 'disconnected' | 'qr' | 'connected'
+  qr?: string
+  phone?: string
+}
+
+type Tab = 'students' | 'logs' | 'settings' | 'undangan' | 'wabot' | 'analitik'
+type StatusFilter = 'Semua' | 'LULUS' | 'TIDAK LULUS' | 'Proses Susulan'
 
 const INVITE_MESSAGE = (name: string, schoolName: string) =>
   `Assalamu'alaikum Wr. Wb.\n\nYth. *${name}*\n\nDengan penuh kebahagiaan, kami mengucapkan selamat atas kelulusan Anda dari *${schoolName}* Tahun Ajaran 2025/2026.\n\n📍 *Undangan Wisuda*\n🏨 Venue: *${VENUE}*\n📍 Lokasi: *${VENUE_LOCATION}*\n📅 Tanggal: *${EVENT_DATE}*\n⏰ Waktu: *${EVENT_TIME}* s.d. selesai\n\nHarap hadir tepat waktu dengan mengenakan pakaian resmi. Mohon tunjukkan pesan ini kepada panitia sebagai bukti undangan.\n\nTerima kasih dan sampai jumpa di hari yang bersejarah ini! 🎓\n\nWassalamu'alaikum Wr. Wb.\n\n_${schoolName}_`
@@ -62,10 +78,15 @@ export default function AdminPage() {
 
   const [students, setStudents] = useState<Student[]>([])
   const [searchQuery, setSearchQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('Semua')
+  const [kelasFilter, setKelasFilter] = useState('Semua')
   const [showAddForm, setShowAddForm] = useState(false)
   const [editingStudent, setEditingStudent] = useState<EditingStudent | null>(null)
-  const [newStudent, setNewStudent] = useState({ name: '', nisn: '', nis: '', status: 'LULUS' as 'LULUS' | 'TIDAK LULUS', keterangan: '', phone: '' })
+  const [newStudent, setNewStudent] = useState({ name: '', nisn: '', nis: '', status: 'LULUS' as Student['status'], kelas: '', keterangan: '', phone: '' })
   const [loadingStudents, setLoadingStudents] = useState(false)
+  const [duplicateWarning, setDuplicateWarning] = useState('')
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [bulkStatus, setBulkStatus] = useState<Student['status']>('LULUS')
 
   const [logs, setLogs] = useState<ActivityLog[]>([])
   const [loadingLogs, setLoadingLogs] = useState(false)
@@ -76,13 +97,28 @@ export default function AdminPage() {
     schoolName: '',
     principalName: '',
     principalNip: '',
+    logoUrl: '',
+    primaryColor: '#2563EB',
+    accessStartTime: '08:00',
+    accessEndTime: '23:59',
+    accessTimeEnabled: false,
+    waBotEnabled: false,
+    waPhoneNumber: '',
   })
   const [savingSettings, setSavingSettings] = useState(false)
   const [settingsSaved, setSettingsSaved] = useState(false)
 
+  const [waBotState, setWaBotState] = useState<WaBotState>({ status: 'disconnected' })
+  const [waBotLoading, setWaBotLoading] = useState(false)
+  const [waAutoSend, setWaAutoSend] = useState(false)
+  const [waOtpVerify, setWaOtpVerify] = useState(false)
+
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [importStatus, setImportStatus] = useState('')
   const [sentCount, setSentCount] = useState(0)
+  const [toast, setToast] = useState('')
+
+  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000) }
 
   useEffect(() => {
     const savedToken = localStorage.getItem('adminToken')
@@ -95,6 +131,7 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (isLoggedIn && token && activeTab === 'logs') fetchLogs()
+    if (isLoggedIn && token && activeTab === 'wabot') fetchWaBot()
   }, [activeTab, isLoggedIn, token])
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -132,14 +169,32 @@ export default function AdminPage() {
     if (res.ok) setSettings(data.settings)
   }
 
+  const fetchWaBot = async () => {
+    try {
+      const res = await fetch('/api/admin/wa-bot', { headers: { Authorization: `Bearer ${token}` } })
+      const data = await res.json()
+      if (res.ok) setWaBotState(data)
+    } catch {}
+  }
+
   const handleAddStudent = async (e: React.FormEvent) => {
     e.preventDefault()
+    setDuplicateWarning('')
+    const dup = students.find(s => s.nisn === newStudent.nisn)
+    if (dup) {
+      setDuplicateWarning(`⚠️ NISN ${newStudent.nisn} sudah digunakan oleh ${dup.name}. Lanjutkan?`)
+    }
     const res = await fetch('/api/admin/students', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify(newStudent),
     })
-    if (res.ok) { setNewStudent({ name: '', nisn: '', nis: '', status: 'LULUS', keterangan: '', phone: '' }); setShowAddForm(false); fetchStudents() }
+    if (res.ok) {
+      setNewStudent({ name: '', nisn: '', nis: '', status: 'LULUS', kelas: '', keterangan: '', phone: '' })
+      setShowAddForm(false)
+      setDuplicateWarning('')
+      fetchStudents()
+    }
   }
 
   const handleEditStudent = async (e: React.FormEvent) => {
@@ -159,11 +214,27 @@ export default function AdminPage() {
     fetchStudents()
   }
 
+  const handleBulkStatusChange = async () => {
+    if (selectedIds.size === 0) return
+    if (!confirm(`Ubah status ${selectedIds.size} siswa terpilih menjadi "${bulkStatus}"?`)) return
+    for (const id of selectedIds) {
+      const student = students.find(s => s.id === id)
+      if (!student) continue
+      await fetch('/api/admin/students', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ ...student, status: bulkStatus }),
+      })
+    }
+    setSelectedIds(new Set())
+    fetchStudents()
+  }
+
   const handleLogout = () => { localStorage.removeItem('adminToken'); setToken(''); setIsLoggedIn(false); setStudents([]) }
 
   const exportCSV = () => {
-    const header = 'ID,Nama,NISN,NIS,Status,Keterangan,No HP\n'
-    const rows = students.map(s => `${s.id},"${s.name}",${s.nisn},${s.nis},${s.status},"${s.keterangan || ''}","${s.phone || ''}"`).join('\n')
+    const header = 'ID,Nama,NISN,NIS,Kelas,Status,Keterangan,No HP\n'
+    const rows = students.map(s => `${s.id},"${s.name}",${s.nisn},${s.nis},"${s.kelas || ''}",${s.status},"${s.keterangan || ''}","${s.phone || ''}"`).join('\n')
     const blob = new Blob([header + rows], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a'); a.href = url; a.download = 'data_siswa_2026.csv'; a.click(); URL.revokeObjectURL(url)
@@ -177,12 +248,13 @@ export default function AdminPage() {
     let imported = 0, failed = 0
     for (const line of lines) {
       const parts = line.split(',').map(p => p.replace(/^"|"$/g, '').trim())
-      const [, name, nisn, nis, status, keterangan, phone] = parts
+      const [, name, nisn, nis, kelas, status, keterangan, phone] = parts
       if (!name || !nisn || !nis) { failed++; continue }
+      const validStatus: Student['status'] = status === 'TIDAK LULUS' ? 'TIDAK LULUS' : status === 'Proses Susulan' ? 'Proses Susulan' : 'LULUS'
       const res = await fetch('/api/admin/students', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ name, nisn, nis, status: status === 'TIDAK LULUS' ? 'TIDAK LULUS' : 'LULUS', keterangan: keterangan || '', phone: phone || '' }),
+        body: JSON.stringify({ name, nisn, nis, kelas: kelas || '', status: validStatus, keterangan: keterangan || '', phone: phone || '' }),
       })
       if (res.ok) imported++; else failed++
     }
@@ -217,14 +289,76 @@ export default function AdminPage() {
     lulusWithPhone.forEach((s, i) => setTimeout(() => sendInviteWA(s), i * 800))
   }
 
-  const filteredStudents = students.filter(s =>
-    s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    s.nisn.includes(searchQuery) ||
-    s.nis.toLowerCase().includes(searchQuery.toLowerCase())
-  )
+  const handleWaBotConnect = async () => {
+    setWaBotLoading(true)
+    try {
+      const res = await fetch('/api/admin/wa-bot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action: 'connect' }),
+      })
+      const data = await res.json()
+      if (res.ok) setWaBotState(data)
+    } finally { setWaBotLoading(false) }
+  }
+
+  const handleWaBotDisconnect = async () => {
+    setWaBotLoading(true)
+    try {
+      const res = await fetch('/api/admin/wa-bot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action: 'disconnect' }),
+      })
+      const data = await res.json()
+      if (res.ok) setWaBotState(data)
+    } finally { setWaBotLoading(false) }
+  }
+
+  const allKelas = Array.from(new Set(students.map(s => s.kelas).filter(Boolean))).sort() as string[]
+
+  const filteredStudents = students.filter(s => {
+    const matchSearch = s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      s.nisn.includes(searchQuery) ||
+      s.nis.toLowerCase().includes(searchQuery.toLowerCase())
+    const matchStatus = statusFilter === 'Semua' || s.status === statusFilter
+    const matchKelas = kelasFilter === 'Semua' || s.kelas === kelasFilter
+    return matchSearch && matchStatus && matchKelas
+  })
 
   const lulusStudents = students.filter(s => s.status === 'LULUS')
   const tidakLulusStudents = students.filter(s => s.status === 'TIDAK LULUS')
+  const prosesSusulanStudents = students.filter(s => s.status === 'Proses Susulan')
+
+  // Analytics data
+  const today = new Date().toDateString()
+  const todayLogs = logs.filter(l => new Date(l.timestamp).toDateString() === today)
+  const successLogs = logs.filter(l => l.found)
+  const successRate = logs.length > 0 ? Math.round((successLogs.length / logs.length) * 100) : 0
+  const nisnCounts = logs.reduce<Record<string, number>>((acc, l) => { acc[l.nisn] = (acc[l.nisn] || 0) + 1; return acc }, {})
+  const mostCheckedNisn = Object.entries(nisnCounts).sort((a, b) => b[1] - a[1])[0]
+  const mostCheckedStudent = mostCheckedNisn ? students.find(s => s.nisn === mostCheckedNisn[0]) : null
+
+  // Hourly breakdown last 24h
+  const now = new Date()
+  const hourlyData = Array.from({ length: 24 }, (_, i) => {
+    const h = (now.getHours() - 23 + i + 24) % 24
+    const count = logs.filter(l => {
+      const logDate = new Date(l.timestamp)
+      const diffH = (now.getTime() - logDate.getTime()) / 3600000
+      return diffH <= 24 && logDate.getHours() === h
+    }).length
+    return { hour: h, count }
+  })
+  const maxHourly = Math.max(...hourlyData.map(d => d.count), 1)
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filteredStudents.length) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(filteredStudents.map(s => s.id)))
+    }
+  }
 
   if (!isLoggedIn) {
     return (
@@ -257,6 +391,13 @@ export default function AdminPage() {
 
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-900">
+      {/* Toast */}
+      {toast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-xl bg-emerald-600 text-white font-medium shadow-xl whitespace-nowrap">
+          ✓ {toast}
+        </div>
+      )}
+
       <header className="bg-white dark:bg-slate-800 shadow-sm border-b border-slate-200 dark:border-slate-700">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -274,12 +415,12 @@ export default function AdminPage() {
 
       <div className="max-w-7xl mx-auto px-6 py-8">
         {/* Stats */}
-        <div className="grid grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
           {[
             { label: 'Total Siswa', value: students.length, color: 'bg-blue-500' },
             { label: 'Lulus', value: lulusStudents.length, color: 'bg-emerald-500' },
             { label: 'Belum Lulus', value: tidakLulusStudents.length, color: 'bg-red-500' },
-            { label: 'Undangan Terkirim', value: sentCount, color: 'bg-purple-500' },
+            { label: 'Proses Susulan', value: prosesSusulanStudents.length, color: 'bg-amber-500' },
           ].map((stat, i) => (
             <div key={i} className="bg-white dark:bg-slate-800 rounded-2xl p-5 shadow-sm border border-slate-200 dark:border-slate-700">
               <div className={`w-8 h-8 ${stat.color} rounded-lg mb-3`} />
@@ -295,6 +436,8 @@ export default function AdminPage() {
             { id: 'students', label: 'Data Siswa', icon: Users },
             { id: 'undangan', label: 'Undangan Wisuda', icon: Send },
             { id: 'logs', label: 'Log Aktivitas', icon: Activity },
+            { id: 'wabot', label: 'WhatsApp Bot', icon: MessageSquare },
+            { id: 'analitik', label: 'Analitik', icon: BarChart2 },
             { id: 'settings', label: 'Pengaturan', icon: Settings },
           ] as { id: Tab; label: string; icon: React.ElementType }[]).map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
@@ -307,25 +450,54 @@ export default function AdminPage() {
         {/* Tab: Data Siswa */}
         {activeTab === 'students' && (
           <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
-            <div className="flex flex-col sm:flex-row gap-4 mb-6">
+            <div className="flex flex-col sm:flex-row gap-4 mb-4">
               <div className="flex-1 relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Cari nama, NISN, atau NIS..."
                   className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
               </div>
               <div className="flex gap-2 flex-wrap">
+                <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as StatusFilter)}
+                  className="px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <option value="Semua">Semua Status</option>
+                  <option value="LULUS">LULUS</option>
+                  <option value="TIDAK LULUS">TIDAK LULUS</option>
+                  <option value="Proses Susulan">Proses Susulan</option>
+                </select>
+                <select value={kelasFilter} onChange={e => setKelasFilter(e.target.value)}
+                  className="px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <option value="Semua">Semua Kelas</option>
+                  {allKelas.map(k => <option key={k} value={k}>{k}</option>)}
+                </select>
                 <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-4 py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-sm font-medium transition">
-                  <Upload className="w-4 h-4" />Import CSV
+                  <Upload className="w-4 h-4" />Import
                 </button>
                 <input ref={fileInputRef} type="file" accept=".csv" onChange={handleImportCSV} className="hidden" />
                 <button onClick={exportCSV} className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-medium transition">
-                  <Download className="w-4 h-4" />Export CSV
+                  <Download className="w-4 h-4" />Export
                 </button>
                 <button onClick={() => setShowAddForm(true)} className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium transition">
                   <Plus className="w-4 h-4" />Tambah
                 </button>
               </div>
             </div>
+
+            {/* Bulk edit bar */}
+            {selectedIds.size > 0 && (
+              <div className="flex items-center gap-3 mb-4 p-3 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+                <span className="text-sm font-medium text-blue-700 dark:text-blue-300">{selectedIds.size} terpilih</span>
+                <select value={bulkStatus} onChange={e => setBulkStatus(e.target.value as Student['status'])}
+                  className="px-3 py-1.5 rounded-lg border border-blue-300 dark:border-blue-700 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-sm">
+                  <option value="LULUS">LULUS</option>
+                  <option value="TIDAK LULUS">TIDAK LULUS</option>
+                  <option value="Proses Susulan">Proses Susulan</option>
+                </select>
+                <button onClick={handleBulkStatusChange} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition">
+                  Ubah Status Terpilih
+                </button>
+                <button onClick={() => setSelectedIds(new Set())} className="text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">Batal</button>
+              </div>
+            )}
 
             {importStatus && (
               <div className="bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800 text-violet-700 dark:text-violet-300 rounded-xl px-4 py-3 text-sm mb-4">{importStatus}</div>
@@ -335,28 +507,39 @@ export default function AdminPage() {
               <motion.form initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} onSubmit={handleAddStudent}
                 className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-4 mb-4 border border-blue-200 dark:border-blue-800">
                 <h3 className="font-semibold text-slate-800 dark:text-slate-100 mb-3">Tambah Siswa Baru</h3>
+                {duplicateWarning && (
+                  <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 rounded-lg px-3 py-2 text-sm mb-3">{duplicateWarning}</div>
+                )}
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
                   <input type="text" placeholder="Nama lengkap" value={newStudent.name} onChange={e => setNewStudent(p => ({ ...p, name: e.target.value }))}
                     className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" required />
-                  <input type="text" placeholder="NISN" value={newStudent.nisn} onChange={e => setNewStudent(p => ({ ...p, nisn: e.target.value }))}
+                  <input type="text" placeholder="NISN" value={newStudent.nisn} onChange={e => {
+                    const v = e.target.value
+                    setNewStudent(p => ({ ...p, nisn: v }))
+                    const dup = students.find(s => s.nisn === v)
+                    setDuplicateWarning(dup ? `⚠️ NISN ini sudah digunakan oleh: ${dup.name}` : '')
+                  }}
                     className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" required />
                   <input type="text" placeholder="NIS" value={newStudent.nis} onChange={e => setNewStudent(p => ({ ...p, nis: e.target.value }))}
                     className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" required />
+                  <input type="text" placeholder="Kelas (mis. XII IPA 1)" value={newStudent.kelas} onChange={e => setNewStudent(p => ({ ...p, kelas: e.target.value }))}
+                    className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                   <input type="tel" placeholder="No HP (08xxx)" value={newStudent.phone} onChange={e => setNewStudent(p => ({ ...p, phone: e.target.value }))}
                     className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  <select value={newStudent.status} onChange={e => setNewStudent(p => ({ ...p, status: e.target.value as 'LULUS' | 'TIDAK LULUS' }))}
+                  <select value={newStudent.status} onChange={e => setNewStudent(p => ({ ...p, status: e.target.value as Student['status'] }))}
                     className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                     <option value="LULUS">LULUS</option>
                     <option value="TIDAK LULUS">TIDAK LULUS</option>
+                    <option value="Proses Susulan">Proses Susulan</option>
                   </select>
-                  {newStudent.status === 'TIDAK LULUS' && (
-                    <input type="text" placeholder="Keterangan (tugas yg belum selesai)" value={newStudent.keterangan} onChange={e => setNewStudent(p => ({ ...p, keterangan: e.target.value }))}
-                      className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  {(newStudent.status === 'TIDAK LULUS' || newStudent.status === 'Proses Susulan') && (
+                    <input type="text" placeholder="Keterangan" value={newStudent.keterangan} onChange={e => setNewStudent(p => ({ ...p, keterangan: e.target.value }))}
+                      className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 col-span-2" />
                   )}
                 </div>
                 <div className="flex gap-2">
                   <button type="submit" className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium"><Check className="w-3 h-3" />Simpan</button>
-                  <button type="button" onClick={() => setShowAddForm(false)} className="flex items-center gap-1 px-3 py-1.5 bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg text-sm"><X className="w-3 h-3" />Batal</button>
+                  <button type="button" onClick={() => { setShowAddForm(false); setDuplicateWarning('') }} className="flex items-center gap-1 px-3 py-1.5 bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg text-sm"><X className="w-3 h-3" />Batal</button>
                 </div>
               </motion.form>
             )}
@@ -372,16 +555,19 @@ export default function AdminPage() {
                     placeholder="NISN" className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                   <input type="text" value={editingStudent.nis} onChange={e => setEditingStudent(p => p ? { ...p, nis: e.target.value } : p)}
                     placeholder="NIS" className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  <input type="text" value={editingStudent.kelas} onChange={e => setEditingStudent(p => p ? { ...p, kelas: e.target.value } : p)}
+                    placeholder="Kelas" className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                   <input type="tel" value={editingStudent.phone} onChange={e => setEditingStudent(p => p ? { ...p, phone: e.target.value } : p)}
                     placeholder="No HP (08xxx)" className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  <select value={editingStudent.status} onChange={e => setEditingStudent(p => p ? { ...p, status: e.target.value as 'LULUS' | 'TIDAK LULUS' } : p)}
+                  <select value={editingStudent.status} onChange={e => setEditingStudent(p => p ? { ...p, status: e.target.value as Student['status'] } : p)}
                     className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-500">
                     <option value="LULUS">LULUS</option>
                     <option value="TIDAK LULUS">TIDAK LULUS</option>
+                    <option value="Proses Susulan">Proses Susulan</option>
                   </select>
-                  {editingStudent.status === 'TIDAK LULUS' && (
+                  {(editingStudent.status === 'TIDAK LULUS' || editingStudent.status === 'Proses Susulan') && (
                     <input type="text" value={editingStudent.keterangan} onChange={e => setEditingStudent(p => p ? { ...p, keterangan: e.target.value } : p)}
-                      placeholder="Keterangan tugas belum selesai" className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-500" />
+                      placeholder="Keterangan" className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-500 col-span-2" />
                   )}
                 </div>
                 <div className="flex gap-2">
@@ -398,10 +584,15 @@ export default function AdminPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-200 dark:border-slate-700">
+                      <th className="py-3 px-2 text-left">
+                        <input type="checkbox" checked={selectedIds.size === filteredStudents.length && filteredStudents.length > 0}
+                          onChange={toggleSelectAll} className="rounded" />
+                      </th>
                       <th className="text-left py-3 px-2 text-slate-500 dark:text-slate-400 font-medium">No</th>
                       <th className="text-left py-3 px-2 text-slate-500 dark:text-slate-400 font-medium">Nama</th>
                       <th className="text-left py-3 px-2 text-slate-500 dark:text-slate-400 font-medium">NISN</th>
                       <th className="text-left py-3 px-2 text-slate-500 dark:text-slate-400 font-medium">NIS</th>
+                      <th className="text-left py-3 px-2 text-slate-500 dark:text-slate-400 font-medium">Kelas</th>
                       <th className="text-left py-3 px-2 text-slate-500 dark:text-slate-400 font-medium">No HP</th>
                       <th className="text-left py-3 px-2 text-slate-500 dark:text-slate-400 font-medium">Status</th>
                       <th className="text-left py-3 px-2 text-slate-500 dark:text-slate-400 font-medium">Aksi</th>
@@ -409,7 +600,15 @@ export default function AdminPage() {
                   </thead>
                   <tbody>
                     {filteredStudents.map((s, i) => (
-                      <tr key={s.id} className="border-b border-slate-100 dark:border-slate-700/50 hover:bg-slate-50 dark:hover:bg-slate-700/30">
+                      <tr key={s.id} className={`border-b border-slate-100 dark:border-slate-700/50 hover:bg-slate-50 dark:hover:bg-slate-700/30 ${selectedIds.has(s.id) ? 'bg-blue-50 dark:bg-blue-900/10' : ''}`}>
+                        <td className="py-3 px-2">
+                          <input type="checkbox" checked={selectedIds.has(s.id)}
+                            onChange={() => {
+                              const next = new Set(selectedIds)
+                              if (next.has(s.id)) next.delete(s.id); else next.add(s.id)
+                              setSelectedIds(next)
+                            }} className="rounded" />
+                        </td>
                         <td className="py-3 px-2 text-slate-500">{i + 1}</td>
                         <td className="py-3 px-2">
                           <div className="font-medium text-slate-800 dark:text-slate-100">{s.name}</div>
@@ -417,15 +616,30 @@ export default function AdminPage() {
                         </td>
                         <td className="py-3 px-2 text-slate-600 dark:text-slate-300 font-mono text-xs">{s.nisn}</td>
                         <td className="py-3 px-2 text-slate-600 dark:text-slate-300">{s.nis}</td>
+                        <td className="py-3 px-2 text-slate-500 text-xs">{s.kelas || '-'}</td>
                         <td className="py-3 px-2 text-slate-500 text-xs font-mono">{s.phone || '-'}</td>
                         <td className="py-3 px-2">
-                          <span className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full ${s.status === 'LULUS' ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400' : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'}`}>
+                          <span className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full ${
+                            s.status === 'LULUS'
+                              ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
+                              : s.status === 'Proses Susulan'
+                                ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
+                                : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+                          }`}>
                             {s.status}
                           </span>
                         </td>
                         <td className="py-3 px-2">
                           <div className="flex items-center gap-1">
-                            <button onClick={() => setEditingStudent({ id: s.id, name: s.name, nisn: s.nisn, nis: s.nis, status: s.status, keterangan: s.keterangan || '', phone: s.phone || '' })}
+                            <button onClick={() => {
+                              const sl = `${window.location.origin}/s/${s.nis}`
+                              navigator.clipboard.writeText(sl)
+                              showToast('Short link disalin!')
+                            }} title={`/s/${s.nis}`}
+                              className="p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition">
+                              <Link className="w-3.5 h-3.5" />
+                            </button>
+                            <button onClick={() => setEditingStudent({ id: s.id, name: s.name, nisn: s.nisn, nis: s.nis, status: s.status, kelas: s.kelas || '', keterangan: s.keterangan || '', phone: s.phone || '' })}
                               className="p-1.5 text-blue-600 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-lg transition"><Edit2 className="w-3.5 h-3.5" /></button>
                             {s.status === 'LULUS' && (
                               <button onClick={() => sendInviteWA(s)} title="Kirim undangan WA"
@@ -448,7 +662,6 @@ export default function AdminPage() {
         {/* Tab: Undangan Wisuda */}
         {activeTab === 'undangan' && (
           <div className="space-y-6">
-            {/* Event Info Card */}
             <div className="bg-gradient-to-r from-blue-600 to-emerald-600 rounded-2xl p-6 text-white shadow-lg">
               <div className="flex items-start gap-4">
                 <div className="text-4xl">🎓</div>
@@ -464,7 +677,6 @@ export default function AdminPage() {
               </div>
             </div>
 
-            {/* Send All Button */}
             <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
               <div className="flex items-center justify-between mb-4">
                 <div>
@@ -480,11 +692,10 @@ export default function AdminPage() {
                 </button>
               </div>
               <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl px-4 py-3 text-sm text-amber-700 dark:text-amber-300">
-                💡 <strong>Tips:</strong> Isi nomor HP siswa terlebih dahulu di tab "Data Siswa" agar undangan dapat dikirim langsung ke nomor masing-masing. Browser akan membuka WhatsApp satu per satu.
+                💡 <strong>Tips:</strong> Isi nomor HP siswa terlebih dahulu di tab &quot;Data Siswa&quot;.
               </div>
             </div>
 
-            {/* Students List */}
             <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
               <h3 className="font-bold text-slate-800 dark:text-slate-100 mb-4">Daftar Siswa LULUS ({lulusStudents.length} siswa)</h3>
               <div className="overflow-x-auto">
@@ -527,7 +738,6 @@ export default function AdminPage() {
               </div>
             </div>
 
-            {/* Preview pesan */}
             <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
               <h3 className="font-bold text-slate-800 dark:text-slate-100 mb-3">Preview Pesan Undangan</h3>
               <div className="bg-[#ECE5DD] rounded-2xl p-4">
@@ -583,6 +793,188 @@ export default function AdminPage() {
           </div>
         )}
 
+        {/* Tab: WhatsApp Bot */}
+        {activeTab === 'wabot' && (
+          <div className="space-y-6 max-w-2xl">
+            {/* Info box */}
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-2xl p-4">
+              <p className="font-bold text-blue-700 dark:text-blue-300 mb-1">ℹ️ Tentang WhatsApp Bot</p>
+              <p className="text-sm text-blue-600 dark:text-blue-400">Bot WA digunakan untuk kirim undangan otomatis dan kode OTP verifikasi. Hubungkan nomor WhatsApp sekolah dengan memindai QR code yang muncul.</p>
+            </div>
+
+            {/* Status card */}
+            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-slate-800 dark:text-slate-100">Status Koneksi Bot</h3>
+                <span className={`flex items-center gap-2 text-sm font-bold px-3 py-1 rounded-full ${
+                  waBotState.status === 'connected'
+                    ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
+                    : waBotState.status === 'qr'
+                      ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
+                      : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
+                }`}>
+                  <span className={`w-2 h-2 rounded-full ${waBotState.status === 'connected' ? 'bg-emerald-500' : waBotState.status === 'qr' ? 'bg-amber-500 animate-pulse' : 'bg-slate-400'}`} />
+                  {waBotState.status === 'connected' ? 'Terhubung' : waBotState.status === 'qr' ? 'Menunggu Scan QR' : 'Tidak Terhubung'}
+                </span>
+              </div>
+
+              {waBotState.status === 'disconnected' && (
+                <div className="text-center py-6">
+                  <div className="text-5xl mb-3">📱</div>
+                  <p className="text-slate-500 dark:text-slate-400 text-sm mb-4">Bot belum terhubung. Klik tombol di bawah untuk memulai koneksi.</p>
+                  <button onClick={handleWaBotConnect} disabled={waBotLoading}
+                    className="px-6 py-3 rounded-xl font-bold text-white disabled:opacity-60 transition"
+                    style={{ background: 'linear-gradient(135deg,#25D366,#128C7E)' }}>
+                    {waBotLoading ? 'Memproses...' : '📲 Hubungkan WhatsApp'}
+                  </button>
+                </div>
+              )}
+
+              {waBotState.status === 'qr' && waBotState.qr && (
+                <div className="text-center py-4">
+                  <p className="text-sm font-medium text-slate-600 dark:text-slate-400 mb-4">Buka WhatsApp &gt; Perangkat Tertaut &gt; Pindai QR code berikut:</p>
+                  <div className="inline-block p-4 bg-white rounded-2xl shadow-md border border-slate-200">
+                    <img src={waBotState.qr} alt="QR Code WhatsApp" className="w-56 h-56" />
+                  </div>
+                  <p className="text-xs text-slate-400 mt-3">QR code berlaku selama 60 detik</p>
+                  <div className="flex gap-2 justify-center mt-4">
+                    <button onClick={handleWaBotConnect} disabled={waBotLoading}
+                      className="px-4 py-2 rounded-xl text-sm font-medium border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition">
+                      Perbarui QR
+                    </button>
+                    <button onClick={handleWaBotDisconnect} disabled={waBotLoading}
+                      className="px-4 py-2 rounded-xl text-sm font-medium bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50 transition">
+                      Batal
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {waBotState.status === 'connected' && (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3 p-4 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800">
+                    <span className="text-2xl">✅</span>
+                    <div>
+                      <p className="font-bold text-emerald-700 dark:text-emerald-400">Bot Terhubung</p>
+                      <p className="text-sm text-emerald-600 dark:text-emerald-500">{waBotState.phone || 'Nomor tidak diketahui'}</p>
+                    </div>
+                  </div>
+                  <button onClick={handleWaBotDisconnect} disabled={waBotLoading}
+                    className="w-full py-2.5 rounded-xl font-medium text-sm bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-200 transition">
+                    {waBotLoading ? 'Memproses...' : '🔌 Putuskan Koneksi'}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Settings */}
+            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+              <h3 className="font-bold text-slate-800 dark:text-slate-100 mb-4">Pengaturan Bot</h3>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-slate-700 dark:text-slate-300 text-sm">Kirim Undangan Otomatis</p>
+                    <p className="text-xs text-slate-400 mt-0.5">Kirim undangan wisuda secara otomatis ke siswa LULUS</p>
+                  </div>
+                  <button onClick={() => setWaAutoSend(v => !v)}
+                    className={`relative w-12 h-6 rounded-full transition-colors ${waAutoSend ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'}`}>
+                    <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${waAutoSend ? 'translate-x-6' : ''}`} />
+                  </button>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-slate-700 dark:text-slate-300 text-sm">Verifikasi OTP</p>
+                    <p className="text-xs text-slate-400 mt-0.5">Kirim kode OTP untuk verifikasi identitas siswa</p>
+                  </div>
+                  <button onClick={() => setWaOtpVerify(v => !v)}
+                    className={`relative w-12 h-6 rounded-full transition-colors ${waOtpVerify ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'}`}>
+                    <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${waOtpVerify ? 'translate-x-6' : ''}`} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab: Analitik */}
+        {activeTab === 'analitik' && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              {[
+                { label: 'Pencarian Hari Ini', value: todayLogs.length, color: 'text-blue-600', bg: 'bg-blue-50 dark:bg-blue-900/20', border: 'border-blue-200 dark:border-blue-800' },
+                { label: 'Total Pencarian', value: logs.length, color: 'text-purple-600', bg: 'bg-purple-50 dark:bg-purple-900/20', border: 'border-purple-200 dark:border-purple-800' },
+                { label: 'Success Rate', value: `${successRate}%`, color: 'text-emerald-600', bg: 'bg-emerald-50 dark:bg-emerald-900/20', border: 'border-emerald-200 dark:border-emerald-800' },
+                { label: 'Paling Dicari', value: mostCheckedStudent ? mostCheckedStudent.name.split(' ')[0] : '-', color: 'text-amber-600', bg: 'bg-amber-50 dark:bg-amber-900/20', border: 'border-amber-200 dark:border-amber-800' },
+              ].map((stat, i) => (
+                <div key={i} className={`${stat.bg} border ${stat.border} rounded-2xl p-5`}>
+                  <div className={`text-2xl font-black ${stat.color}`}>{stat.value}</div>
+                  <div className="text-sm text-slate-500 dark:text-slate-400 mt-1">{stat.label}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Most checked student detail */}
+            {mostCheckedStudent && (
+              <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+                <h3 className="font-bold text-slate-800 dark:text-slate-100 mb-3">Siswa Paling Sering Dicek</h3>
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center text-xl font-black text-amber-600">
+                    {mostCheckedStudent.name.charAt(0)}
+                  </div>
+                  <div>
+                    <p className="font-bold text-slate-800 dark:text-slate-100">{mostCheckedStudent.name}</p>
+                    <p className="text-sm text-slate-500">NISN: {mostCheckedStudent.nisn} | NIS: {mostCheckedStudent.nis}</p>
+                    <p className="text-sm text-amber-600 font-medium">{mostCheckedNisn?.[1] || 0}x dicek</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Activity breakdown */}
+            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+              <h3 className="font-bold text-slate-800 dark:text-slate-100 mb-4">Pencarian Per Jam (24 Jam Terakhir)</h3>
+              <div className="flex items-end gap-1 h-32">
+                {hourlyData.map(({ hour, count }) => (
+                  <div key={hour} className="flex-1 flex flex-col items-center gap-1">
+                    <div
+                      className="w-full bg-blue-500 dark:bg-blue-600 rounded-t-sm transition-all"
+                      style={{ height: `${Math.max((count / maxHourly) * 100, count > 0 ? 4 : 0)}%`, minHeight: count > 0 ? '4px' : '0' }}
+                      title={`${hour}:00 — ${count} pencarian`}
+                    />
+                  </div>
+                ))}
+              </div>
+              <div className="flex justify-between text-xs text-slate-400 mt-2">
+                <span>{hourlyData[0]?.hour}:00</span>
+                <span>{hourlyData[12]?.hour}:00</span>
+                <span>{hourlyData[23]?.hour}:00</span>
+              </div>
+            </div>
+
+            {/* Status breakdown */}
+            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+              <h3 className="font-bold text-slate-800 dark:text-slate-100 mb-4">Distribusi Status Siswa</h3>
+              <div className="space-y-3">
+                {[
+                  { label: 'LULUS', count: lulusStudents.length, color: 'bg-emerald-500', total: students.length },
+                  { label: 'TIDAK LULUS', count: tidakLulusStudents.length, color: 'bg-red-500', total: students.length },
+                  { label: 'Proses Susulan', count: prosesSusulanStudents.length, color: 'bg-amber-500', total: students.length },
+                ].map(({ label, count, color, total }) => (
+                  <div key={label}>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="font-medium text-slate-700 dark:text-slate-300">{label}</span>
+                      <span className="text-slate-500">{count} siswa ({total > 0 ? Math.round((count / total) * 100) : 0}%)</span>
+                    </div>
+                    <div className="h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                      <div className={`h-full ${color} rounded-full transition-all`} style={{ width: total > 0 ? `${(count / total) * 100}%` : '0%' }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Tab: Pengaturan */}
         {activeTab === 'settings' && (
           <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6 max-w-2xl">
@@ -615,6 +1007,66 @@ export default function AdminPage() {
                 </button>
                 <span className="text-sm text-slate-700 dark:text-slate-300">Pengumuman {settings.announcementActive ? 'Aktif' : 'Tidak Aktif'}</span>
               </div>
+
+              {/* Logo URL */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">URL Logo Sekolah</label>
+                <input type="url" value={settings.logoUrl} onChange={e => setSettings(p => ({ ...p, logoUrl: e.target.value }))}
+                  placeholder="https://example.com/logo.png"
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                {settings.logoUrl && (
+                  <div className="mt-2">
+                    <img src={settings.logoUrl} alt="Preview Logo" className="h-16 w-auto rounded-lg border border-slate-200 dark:border-slate-600 object-contain"
+                      onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                  </div>
+                )}
+              </div>
+
+              {/* Primary color */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Warna Utama</label>
+                <div className="flex items-center gap-3">
+                  <input type="color" value={settings.primaryColor} onChange={e => setSettings(p => ({ ...p, primaryColor: e.target.value }))}
+                    className="w-10 h-10 rounded-lg border border-slate-200 dark:border-slate-600 cursor-pointer" />
+                  <input type="text" value={settings.primaryColor} onChange={e => setSettings(p => ({ ...p, primaryColor: e.target.value }))}
+                    className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono" />
+                </div>
+              </div>
+
+              {/* Time restriction */}
+              <div className="space-y-3 p-4 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/30">
+                <div className="flex items-center gap-3">
+                  <button type="button" onClick={() => setSettings(p => ({ ...p, accessTimeEnabled: !p.accessTimeEnabled }))}
+                    className={`relative w-12 h-6 rounded-full transition-colors ${settings.accessTimeEnabled ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-600'}`}>
+                    <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${settings.accessTimeEnabled ? 'translate-x-6' : ''}`} />
+                  </button>
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Batasi Jam Akses</span>
+                </div>
+                {settings.accessTimeEnabled && (
+                  <div className="flex items-center gap-3">
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">Jam Mulai</label>
+                      <input type="time" value={settings.accessStartTime} onChange={e => setSettings(p => ({ ...p, accessStartTime: e.target.value }))}
+                        className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    </div>
+                    <span className="text-slate-400 mt-4">—</span>
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">Jam Selesai</label>
+                      <input type="time" value={settings.accessEndTime} onChange={e => setSettings(p => ({ ...p, accessEndTime: e.target.value }))}
+                        className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* WA bot phone */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Nomor WA Bot</label>
+                <input type="tel" value={settings.waPhoneNumber} onChange={e => setSettings(p => ({ ...p, waPhoneNumber: e.target.value }))}
+                  placeholder="628xxxxxxxxxx"
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              </div>
+
               <div className="flex items-center gap-3 pt-2">
                 <button type="submit" disabled={savingSettings} className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition disabled:opacity-60">
                   {savingSettings ? 'Menyimpan...' : 'Simpan Pengaturan'}

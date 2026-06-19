@@ -4,6 +4,13 @@ export interface SiteSettings {
   schoolName: string
   principalName: string
   principalNip: string
+  logoUrl: string
+  primaryColor: string
+  accessStartTime: string
+  accessEndTime: string
+  accessTimeEnabled: boolean
+  waBotEnabled: boolean
+  waPhoneNumber: string
 }
 
 export const siteSettings: SiteSettings = {
@@ -12,4 +19,11 @@ export const siteSettings: SiteSettings = {
   schoolName: 'SMA Negeri 1',
   principalName: 'Drs. Budi Santoso, M.Pd.',
   principalNip: '196801011990031002',
+  logoUrl: '',
+  primaryColor: '#2563EB',
+  accessStartTime: '08:00',
+  accessEndTime: '23:59',
+  accessTimeEnabled: false,
+  waBotEnabled: false,
+  waPhoneNumber: '',
 }
