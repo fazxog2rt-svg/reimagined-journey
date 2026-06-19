@@ -5,6 +5,7 @@ export interface Student {
   nis: string;
   status: 'LULUS' | 'TIDAK LULUS';
   keterangan?: string;
+  phone?: string;
 }
 
 export const students: Student[] = [

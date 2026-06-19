@@ -444,6 +444,20 @@ function ResultContent() {
               </motion.div>
             )}
 
+            {/* Graduation event info - only for LULUS */}
+            {student.status === 'LULUS' && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.55 }}
+                className="p-4 rounded-2xl mb-4 border-2 border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/30">
+                <p className="font-black text-emerald-700 dark:text-emerald-400 text-sm mb-2">🎓 Undangan Wisuda</p>
+                <div className="space-y-1 text-sm text-slate-700 dark:text-slate-300">
+                  <p>🏨 <span className="font-semibold">The Grand Livina</span></p>
+                  <p>📍 Cibubur, Jawa Timur</p>
+                  <p>📅 <span className="font-semibold">Kamis, 25 Juni 2026</span> — 08.00 WIB</p>
+                </div>
+                <p className="text-xs text-emerald-600 dark:text-emerald-500 mt-2">Undangan resmi akan dikirim melalui WhatsApp oleh pihak sekolah.</p>
+              </motion.div>
+            )}
+
             {/* Quote - only for LULUS */}
             {student.status === 'LULUS' && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }}
