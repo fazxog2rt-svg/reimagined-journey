@@ -9,7 +9,8 @@ interface Student {
   name: string
   nisn: string
   nis: string
-  status: 'LULUS'
+  status: 'LULUS' | 'TIDAK LULUS'
+  keterangan?: string
 }
 
 interface EditingStudent {

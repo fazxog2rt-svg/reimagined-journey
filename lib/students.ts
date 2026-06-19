@@ -3,7 +3,8 @@ export interface Student {
   name: string;
   nisn: string;
   nis: string;
-  status: 'LULUS';
+  status: 'LULUS' | 'TIDAK LULUS';
+  keterangan?: string;
 }
 
 export const students: Student[] = [
@@ -13,7 +14,7 @@ export const students: Student[] = [
   { id: 4, name: 'Muhammad Faris Azka', nisn: '1000000004', nis: 'XII004', status: 'LULUS' },
   { id: 5, name: 'Yusuf Naufal Haidar', nisn: '1000000005', nis: 'XII005', status: 'LULUS' },
   { id: 6, name: 'Muhammad Naufal Akbar', nisn: '1000000006', nis: 'XII006', status: 'LULUS' },
-  { id: 7, name: 'Ibrahim Zidan Arsyad', nisn: '1000000007', nis: 'XII007', status: 'LULUS' },
+  { id: 7, name: 'Ibrahim Zidan Arsyad', nisn: '1000000007', nis: 'XII007', status: 'TIDAK LULUS', keterangan: 'Belum menyelesaikan tugas hafalan Juz 30' },
   { id: 8, name: 'Muhammad Alfatih Ghani', nisn: '1000000008', nis: 'XII008', status: 'LULUS' },
   { id: 9, name: 'Ismail Rasyid Hanif', nisn: '1000000009', nis: 'XII009', status: 'LULUS' },
   { id: 10, name: 'Muhammad Haikal Firdaus', nisn: '1000000010', nis: 'XII010', status: 'LULUS' },
@@ -21,7 +22,7 @@ export const students: Student[] = [
   { id: 12, name: 'Ayyub Fadlan Kareem', nisn: '1000000012', nis: 'XII012', status: 'LULUS' },
   { id: 13, name: 'Muhammad Rizqan Anwar', nisn: '1000000013', nis: 'XII013', status: 'LULUS' },
   { id: 14, name: 'Abdullah Syafiq Hakim', nisn: '1000000014', nis: 'XII014', status: 'LULUS' },
-  { id: 15, name: 'Muhammad Athar Dzaki', nisn: '1000000015', nis: 'XII015', status: 'LULUS' },
+  { id: 15, name: 'Muhammad Athar Dzaki', nisn: '1000000015', nis: 'XII015', status: 'TIDAK LULUS', keterangan: 'Belum menyelesaikan tugas laporan praktikum kimia' },
   { id: 16, name: 'Umar Faruq Nabil', nisn: '1000000016', nis: 'XII016', status: 'LULUS' },
   { id: 17, name: 'Muhammad Ammar Zhafran', nisn: '1000000017', nis: 'XII017', status: 'LULUS' },
   { id: 18, name: 'Musa Ahsan Rafi', nisn: '1000000018', nis: 'XII018', status: 'LULUS' },
@@ -29,7 +30,7 @@ export const students: Student[] = [
   { id: 20, name: 'Ali Zaki Mubarak', nisn: '1000000020', nis: 'XII020', status: 'LULUS' },
   { id: 21, name: 'Muhammad Khairan Adnan', nisn: '1000000021', nis: 'XII021', status: 'LULUS' },
   { id: 22, name: 'Hasan Aqil Ramadhan', nisn: '1000000022', nis: 'XII022', status: 'LULUS' },
-  { id: 23, name: 'Muhammad Luqman Arif', nisn: '1000000023', nis: 'XII023', status: 'LULUS' },
+  { id: 23, name: 'Muhammad Luqman Arif', nisn: '1000000023', nis: 'XII023', status: 'TIDAK LULUS', keterangan: 'Belum menyelesaikan hafalan surah pilihan (Al-Mulk, Ar-Rahman)' },
   { id: 24, name: 'Malik Farhan Hafiz', nisn: '1000000024', nis: 'XII024', status: 'LULUS' },
   { id: 25, name: 'Muhammad Syauqi Imran', nisn: '1000000025', nis: 'XII025', status: 'LULUS' },
   { id: 26, name: 'Ziyad Fathan Aziz', nisn: '1000000026', nis: 'XII026', status: 'LULUS' },
@@ -40,7 +41,7 @@ export const students: Student[] = [
   { id: 31, name: 'Muhammad Syamil Akhtar', nisn: '1000000031', nis: 'XII031', status: 'LULUS' },
   { id: 32, name: 'Adam Zhafir Mahdi', nisn: '1000000032', nis: 'XII032', status: 'LULUS' },
   { id: 33, name: 'Muhammad Faeyza Kareem', nisn: '1000000033', nis: 'XII033', status: 'LULUS' },
-  { id: 34, name: 'Hamzah Rayhan Firman', nisn: '1000000034', nis: 'XII034', status: 'LULUS' },
+  { id: 34, name: 'Hamzah Rayhan Firman', nisn: '1000000034', nis: 'XII034', status: 'TIDAK LULUS', keterangan: 'Belum mengumpulkan tugas karya tulis ilmiah' },
   { id: 35, name: 'Muhammad Fathan Arkan', nisn: '1000000035', nis: 'XII035', status: 'LULUS' },
   { id: 36, name: 'Salman Harits Azhar', nisn: '1000000036', nis: 'XII036', status: 'LULUS' },
   { id: 37, name: 'Muhammad Irfan Syakir', nisn: '1000000037', nis: 'XII037', status: 'LULUS' },
@@ -64,7 +65,7 @@ export const students: Student[] = [
   { id: 55, name: 'Fatimah Naurah Alya', nisn: '1000000055', nis: 'XII055', status: 'LULUS' },
   { id: 56, name: 'Maryam Salsabila Putri', nisn: '1000000056', nis: 'XII056', status: 'LULUS' },
   { id: 57, name: 'Syafira Elvina Kirana', nisn: '1000000057', nis: 'XII057', status: 'LULUS' },
-  { id: 58, name: 'Zulaikha Adiba Rahma', nisn: '1000000058', nis: 'XII058', status: 'LULUS' },
+  { id: 58, name: 'Zulaikha Adiba Rahma', nisn: '1000000058', nis: 'XII058', status: 'TIDAK LULUS', keterangan: 'Belum menyelesaikan hafalan doa-doa harian (tugas PAI)' },
   { id: 59, name: 'Anindya Nasywa Zahira', nisn: '1000000059', nis: 'XII059', status: 'LULUS' },
   { id: 60, name: 'Nadira Azzahra Khairunnisa', nisn: '1000000060', nis: 'XII060', status: 'LULUS' },
   { id: 61, name: 'Rania Aulia Syakira', nisn: '1000000061', nis: 'XII061', status: 'LULUS' },
@@ -78,7 +79,7 @@ export const students: Student[] = [
   { id: 69, name: 'Aqila Humaira Nabila', nisn: '1000000069', nis: 'XII069', status: 'LULUS' },
   { id: 70, name: 'Nayla Khadijah Zahra', nisn: '1000000070', nis: 'XII070', status: 'LULUS' },
   { id: 71, name: 'Yasmin Aulia Rahma', nisn: '1000000071', nis: 'XII071', status: 'LULUS' },
-  { id: 72, name: 'Zhafira Aisyah Nabila', nisn: '1000000072', nis: 'XII072', status: 'LULUS' },
+  { id: 72, name: 'Zhafira Aisyah Nabila', nisn: '1000000072', nis: 'XII072', status: 'TIDAK LULUS', keterangan: 'Belum mengumpulkan tugas proyek seni budaya' },
   { id: 73, name: 'Noura Safina Huda', nisn: '1000000073', nis: 'XII073', status: 'LULUS' },
   { id: 74, name: 'Adzkia Fathiya Zahra', nisn: '1000000074', nis: 'XII074', status: 'LULUS' },
   { id: 75, name: 'Mahira Salsabila Aziza', nisn: '1000000075', nis: 'XII075', status: 'LULUS' },
@@ -95,7 +96,7 @@ export const students: Student[] = [
   { id: 86, name: 'Fatinah Zahra Aulia', nisn: '1000000086', nis: 'XII086', status: 'LULUS' },
   { id: 87, name: 'Fariha Naurah Amira', nisn: '1000000087', nis: 'XII087', status: 'LULUS' },
   { id: 88, name: 'Jihan Salsabila Rahma', nisn: '1000000088', nis: 'XII088', status: 'LULUS' },
-  { id: 89, name: 'Azrina Khansa Aisyah', nisn: '1000000089', nis: 'XII089', status: 'LULUS' },
+  { id: 89, name: 'Azrina Khansa Aisyah', nisn: '1000000089', nis: 'XII089', status: 'TIDAK LULUS', keterangan: 'Belum menyelesaikan tugas hafalan Juz 29 dan Juz 30' },
   { id: 90, name: 'Amani Zahira Huda', nisn: '1000000090', nis: 'XII090', status: 'LULUS' },
   { id: 91, name: 'Raihana Khairunnisa', nisn: '1000000091', nis: 'XII091', status: 'LULUS' },
   { id: 92, name: 'Nasyita Adiba Humaira', nisn: '1000000092', nis: 'XII092', status: 'LULUS' },

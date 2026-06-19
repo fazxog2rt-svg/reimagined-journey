@@ -26,7 +26,8 @@ export async function POST(req: NextRequest) {
     name: body.name,
     nisn: body.nisn,
     nis: body.nis,
-    status: 'LULUS',
+    status: body.status === 'TIDAK LULUS' ? 'TIDAK LULUS' : 'LULUS',
+    ...(body.keterangan ? { keterangan: body.keterangan } : {}),
   }
   studentsData.push(newStudent)
   return NextResponse.json({ student: newStudent }, { status: 201 })

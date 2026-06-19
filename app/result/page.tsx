@@ -11,7 +11,8 @@ interface Student {
   name: string
   nisn: string
   nis: string
-  status: 'LULUS'
+  status: 'LULUS' | 'TIDAK LULUS'
+  keterangan?: string
 }
 
 const QUOTES = [
@@ -200,8 +201,10 @@ function ResultContent() {
       .then(data => {
         if (data.student) {
           setStudent(data.student)
-          triggerConfetti()
-          playSuccessSound()
+          if (data.student.status === 'LULUS') {
+            triggerConfetti()
+            playSuccessSound()
+          }
           import('qrcode').then(({ default: QRCode }) => {
             QRCode.toDataURL(JSON.stringify({ nama: data.student.name, nisn: data.student.nisn, nis: data.student.nis, status: 'LULUS', tahun: '2025/2026' }), { width: 180, margin: 1 })
               .then(url => setQrDataUrl(url))
@@ -373,17 +376,30 @@ function ResultContent() {
           className="rounded-3xl overflow-hidden shadow-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 animate-glow">
 
           {/* Header */}
-          <div className="relative p-8 text-center text-white overflow-hidden" style={{ background: 'linear-gradient(135deg, #2563EB 0%, #10B981 100%)' }}>
+          <div className="relative p-8 text-center text-white overflow-hidden"
+            style={{ background: student.status === 'LULUS' ? 'linear-gradient(135deg, #2563EB 0%, #10B981 100%)' : 'linear-gradient(135deg, #DC2626 0%, #EA580C 100%)' }}>
             <div className="absolute -top-10 -right-10 w-40 h-40 rounded-full bg-white/10" />
             <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-white/10" />
             <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 0.3, type: 'spring' }}
               className="relative w-20 h-20 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-3 backdrop-blur-sm">
-              <CheckCircle className="w-12 h-12 text-white" />
+              {student.status === 'LULUS'
+                ? <CheckCircle className="w-12 h-12 text-white" />
+                : <span className="text-5xl">⚠️</span>}
             </motion.div>
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
-              <p className="text-lg font-bold mb-1">✅ SELAMAT!</p>
-              <h1 className="text-3xl font-black tracking-wide">ANDA DINYATAKAN</h1>
-              <h2 className="text-5xl font-black tracking-widest mt-1" style={{ textShadow: '0 2px 12px rgba(0,0,0,0.3)' }}>LULUS</h2>
+              {student.status === 'LULUS' ? (
+                <>
+                  <p className="text-lg font-bold mb-1">✅ SELAMAT!</p>
+                  <h1 className="text-3xl font-black tracking-wide">ANDA DINYATAKAN</h1>
+                  <h2 className="text-5xl font-black tracking-widest mt-1" style={{ textShadow: '0 2px 12px rgba(0,0,0,0.3)' }}>LULUS</h2>
+                </>
+              ) : (
+                <>
+                  <p className="text-lg font-bold mb-1">⚠️ PERHATIAN</p>
+                  <h1 className="text-3xl font-black tracking-wide">ANDA DINYATAKAN</h1>
+                  <h2 className="text-4xl font-black tracking-widest mt-1" style={{ textShadow: '0 2px 12px rgba(0,0,0,0.3)' }}>BELUM LULUS</h2>
+                </>
+              )}
               <p className="text-white/80 text-sm mt-2">Tahun Ajaran 2025/2026</p>
             </motion.div>
           </div>
@@ -391,24 +407,53 @@ function ResultContent() {
           <div className="p-6 md:p-8">
             {/* Student info */}
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }} className="space-y-3 mb-6">
-              {[['Nama Lengkap', student.name, false, true], ['NISN', student.nisn, true, false], ['NIS', student.nis, true, false], ['Status', student.status, false, false]].map(([l, v, mono, bold]) => (
+              {[['Nama Lengkap', student.name, false, true], ['NISN', student.nisn, true, false], ['NIS', student.nis, true, false]].map(([l, v, mono, bold]) => (
                 <div key={String(l)} className="flex items-center justify-between py-2.5 border-b border-slate-100 dark:border-slate-700">
                   <span className="text-sm text-slate-500 dark:text-slate-400">{String(l)}</span>
-                  <span className={`font-bold ${mono ? 'font-mono text-blue-600 dark:text-blue-400' : ''} ${bold ? 'text-slate-800 dark:text-slate-100' : ''} ${String(l) === 'Status' ? 'px-3 py-1 rounded-full bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-400 text-sm' : ''}`}>
+                  <span className={`font-bold ${mono ? 'font-mono text-blue-600 dark:text-blue-400' : 'text-slate-800 dark:text-slate-100'}`}>
                     {String(v)}
                   </span>
                 </div>
               ))}
+              <div className="flex items-center justify-between py-2.5 border-b border-slate-100 dark:border-slate-700">
+                <span className="text-sm text-slate-500 dark:text-slate-400">Status</span>
+                <span className={`font-bold px-3 py-1 rounded-full text-sm ${
+                  student.status === 'LULUS'
+                    ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-400'
+                    : 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-400'
+                }`}>
+                  {student.status}
+                </span>
+              </div>
+              {student.status === 'TIDAK LULUS' && student.keterangan && (
+                <div className="py-2.5 border-b border-slate-100 dark:border-slate-700">
+                  <span className="text-sm text-slate-500 dark:text-slate-400 block mb-1">Keterangan</span>
+                  <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl px-4 py-3 text-sm text-red-700 dark:text-red-300 font-medium">
+                    ⚠️ {student.keterangan}
+                  </div>
+                </div>
+              )}
             </motion.div>
 
-            {/* Quote */}
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }}
-              className="p-4 rounded-2xl bg-blue-50 dark:bg-blue-950/40 text-slate-600 dark:text-slate-300 text-sm italic text-center mb-6 border border-blue-100 dark:border-blue-900">
-              &ldquo;{quote}&rdquo;
-            </motion.div>
+            {/* Info box for TIDAK LULUS */}
+            {student.status === 'TIDAK LULUS' && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }}
+                className="p-4 rounded-2xl bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800 text-sm text-orange-700 dark:text-orange-300 mb-6">
+                <p className="font-bold mb-1">📋 Langkah Selanjutnya:</p>
+                <p>Segera hubungi guru pembimbing atau wali kelas Anda untuk menyelesaikan kewajiban yang belum terpenuhi. Setelah semua persyaratan terpenuhi, kelulusan dapat diproses kembali.</p>
+              </motion.div>
+            )}
 
-            {/* QR Code */}
-            {qrDataUrl && (
+            {/* Quote - only for LULUS */}
+            {student.status === 'LULUS' && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }}
+                className="p-4 rounded-2xl bg-blue-50 dark:bg-blue-950/40 text-slate-600 dark:text-slate-300 text-sm italic text-center mb-6 border border-blue-100 dark:border-blue-900">
+                &ldquo;{quote}&rdquo;
+              </motion.div>
+            )}
+
+            {/* QR Code - only for LULUS */}
+            {student.status === 'LULUS' && qrDataUrl && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.7 }} className="flex flex-col items-center mb-6">
                 <div className="p-3 rounded-2xl bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 shadow-md inline-block">
                   <img src={qrDataUrl} alt="QR Verifikasi" className="w-28 h-28" />
@@ -417,41 +462,43 @@ function ResultContent() {
               </motion.div>
             )}
 
-            {/* Share buttons */}
-            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.8 }} className="grid grid-cols-2 gap-2 mb-4">
-              <button onClick={shareWhatsApp}
-                className="flex items-center justify-center gap-2 py-3 rounded-xl font-semibold text-white text-sm transition-all hover:-translate-y-0.5"
-                style={{ background: 'linear-gradient(135deg,#25D366,#128C7E)' }}>
-                <Share2 className="w-4 h-4" /> WhatsApp
-              </button>
-              <button onClick={copyLink}
-                className="flex items-center justify-center gap-2 py-3 rounded-xl font-semibold text-sm border-2 border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all hover:-translate-y-0.5">
-                <Copy className="w-4 h-4" /> Salin Link
-              </button>
-            </motion.div>
-
-            {/* Action buttons */}
-            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.9 }} className="space-y-3">
-              <button onClick={downloadPDF}
-                className="w-full py-3.5 rounded-xl font-bold text-white flex items-center justify-center gap-2 transition-all hover:-translate-y-0.5 hover:shadow-lg"
-                style={{ background: 'linear-gradient(135deg,#2563EB,#1d4ed8)' }}>
-                <Download className="w-5 h-5" /> Download Surat Kelulusan (PDF)
-              </button>
-              <button onClick={downloadSertifikat}
-                className="w-full py-3.5 rounded-xl font-bold text-white flex items-center justify-center gap-2 transition-all hover:-translate-y-0.5 hover:shadow-lg"
-                style={{ background: 'linear-gradient(135deg,#10B981,#059669)' }}>
-                <Award className="w-5 h-5" /> Download Sertifikat (PDF)
-              </button>
-              <button onClick={openPhotoFrame}
-                className="w-full py-3.5 rounded-xl font-bold text-white flex items-center justify-center gap-2 transition-all hover:-translate-y-0.5 hover:shadow-lg"
-                style={{ background: 'linear-gradient(135deg,#8B5CF6,#6D28D9)' }}>
-                <Image className="w-5 h-5" /> Buat Photo Frame Wisuda
-              </button>
-              <button onClick={() => window.print()}
-                className="w-full py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 border-2 border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all hover:-translate-y-0.5">
-                <Printer className="w-5 h-5" /> Cetak Halaman
-              </button>
-            </motion.div>
+            {/* Share & action buttons - only for LULUS */}
+            {student.status === 'LULUS' && (
+              <>
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.8 }} className="grid grid-cols-2 gap-2 mb-4">
+                  <button onClick={shareWhatsApp}
+                    className="flex items-center justify-center gap-2 py-3 rounded-xl font-semibold text-white text-sm transition-all hover:-translate-y-0.5"
+                    style={{ background: 'linear-gradient(135deg,#25D366,#128C7E)' }}>
+                    <Share2 className="w-4 h-4" /> WhatsApp
+                  </button>
+                  <button onClick={copyLink}
+                    className="flex items-center justify-center gap-2 py-3 rounded-xl font-semibold text-sm border-2 border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all hover:-translate-y-0.5">
+                    <Copy className="w-4 h-4" /> Salin Link
+                  </button>
+                </motion.div>
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.9 }} className="space-y-3">
+                  <button onClick={downloadPDF}
+                    className="w-full py-3.5 rounded-xl font-bold text-white flex items-center justify-center gap-2 transition-all hover:-translate-y-0.5 hover:shadow-lg"
+                    style={{ background: 'linear-gradient(135deg,#2563EB,#1d4ed8)' }}>
+                    <Download className="w-5 h-5" /> Download Surat Kelulusan (PDF)
+                  </button>
+                  <button onClick={downloadSertifikat}
+                    className="w-full py-3.5 rounded-xl font-bold text-white flex items-center justify-center gap-2 transition-all hover:-translate-y-0.5 hover:shadow-lg"
+                    style={{ background: 'linear-gradient(135deg,#10B981,#059669)' }}>
+                    <Award className="w-5 h-5" /> Download Sertifikat (PDF)
+                  </button>
+                  <button onClick={openPhotoFrame}
+                    className="w-full py-3.5 rounded-xl font-bold text-white flex items-center justify-center gap-2 transition-all hover:-translate-y-0.5 hover:shadow-lg"
+                    style={{ background: 'linear-gradient(135deg,#8B5CF6,#6D28D9)' }}>
+                    <Image className="w-5 h-5" /> Buat Photo Frame Wisuda
+                  </button>
+                  <button onClick={() => window.print()}
+                    className="w-full py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 border-2 border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all hover:-translate-y-0.5">
+                    <Printer className="w-5 h-5" /> Cetak Halaman
+                  </button>
+                </motion.div>
+              </>
+            )}
 
             <div className="text-center mt-6">
               <button onClick={() => router.push('/')} className="text-sm text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors flex items-center gap-1 mx-auto">
