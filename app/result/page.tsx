@@ -1,10 +1,10 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
-import { motion } from 'framer-motion'
-import { GraduationCap, Download, ArrowLeft, CheckCircle } from 'lucide-react'
-import { Suspense } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { GraduationCap, Download, ArrowLeft, CheckCircle, Share2, Copy, Award, Printer, Image, X, Sun, Moon } from 'lucide-react'
+import { useTheme } from 'next-themes'
 
 interface Student {
   id: number
@@ -14,323 +14,477 @@ interface Student {
   status: 'LULUS'
 }
 
+const QUOTES = [
+  'Selamat atas keberhasilan yang telah diraih. Semoga ilmu yang didapat menjadi bekal untuk masa depan yang lebih baik.',
+  'Ilmu adalah cahaya yang tak pernah padam. Teruslah belajar dan jadilah cahaya bagi sekitarmu.',
+  'Hari ini adalah awal dari perjalanan baru yang penuh kemungkinan. Jadikan setiap langkah bermakna.',
+  'Semoga langkahmu selalu diiringi berkah, setiap impianmu terwujud, dan setiap usahamu berbuah hasil terbaik.',
+  'Kelulusan bukan akhir dari belajar, melainkan awal dari babak baru yang lebih menantang dan penuh peluang.',
+  'Setiap tetes keringat perjuanganmu kini berbuah manis. Terus berjuang dan raih mimpi setinggi langit!',
+  'Tidak ada kesuksesan yang datang tanpa usaha. Kamu telah membuktikannya. Selamat dan tetap semangat!',
+  'Wisuda bukan garis finish, melainkan garis start menuju kehidupan nyata. Berikan yang terbaik!',
+  'Dengan ilmu yang kamu miliki, dunia menanti kontribusimu. Jadilah generasi penerus yang membanggakan.',
+  'Doa orang tua, kerja keras, dan tekadmu telah mengantarkanmu ke sini. Teruskan perjalananmu dengan penuh keyakinan.',
+]
+
+function playSuccessSound() {
+  try {
+    const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)()
+    const notes = [523, 659, 784, 1047]
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+      osc.frequency.value = freq
+      osc.type = 'sine'
+      gain.gain.setValueAtTime(0.25, ctx.currentTime + i * 0.18)
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.18 + 0.5)
+      osc.start(ctx.currentTime + i * 0.18)
+      osc.stop(ctx.currentTime + i * 0.18 + 0.6)
+    })
+  } catch { /* ignore */ }
+}
+
+function generatePhotoFrame(student: Student): string {
+  const canvas = document.createElement('canvas')
+  canvas.width = 600
+  canvas.height = 600
+  const ctx = canvas.getContext('2d')!
+
+  // Background gradient
+  const bg = ctx.createLinearGradient(0, 0, 600, 600)
+  bg.addColorStop(0, '#0F172A')
+  bg.addColorStop(1, '#1E3A5F')
+  ctx.fillStyle = bg
+  ctx.fillRect(0, 0, 600, 600)
+
+  // Border frame
+  for (let i = 0; i < 4; i++) {
+    ctx.strokeStyle = i % 2 === 0 ? '#2563EB' : '#10B981'
+    ctx.lineWidth = 3 - i * 0.5
+    ctx.strokeRect(10 + i * 8, 10 + i * 8, 580 - i * 16, 580 - i * 16)
+  }
+
+  // Corner decorations
+  const corners = [[30, 30], [570, 30], [30, 570], [570, 570]]
+  corners.forEach(([x, y]) => {
+    const g = ctx.createRadialGradient(x, y, 0, x, y, 20)
+    g.addColorStop(0, '#10B981')
+    g.addColorStop(1, 'transparent')
+    ctx.fillStyle = g
+    ctx.beginPath()
+    ctx.arc(x, y, 20, 0, Math.PI * 2)
+    ctx.fill()
+  })
+
+  // Avatar circle
+  const grad = ctx.createRadialGradient(300, 195, 0, 300, 195, 80)
+  grad.addColorStop(0, '#3B82F6')
+  grad.addColorStop(1, '#1d4ed8')
+  ctx.fillStyle = grad
+  ctx.beginPath()
+  ctx.arc(300, 195, 80, 0, Math.PI * 2)
+  ctx.fill()
+
+  // Initials
+  const initials = student.name.split(' ').slice(0, 2).map(n => n[0]).join('')
+  ctx.fillStyle = '#FFFFFF'
+  ctx.font = 'bold 52px Arial'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(initials, 300, 195)
+
+  // LULUS badge
+  const badge = ctx.createLinearGradient(200, 295, 400, 325)
+  badge.addColorStop(0, '#10B981')
+  badge.addColorStop(1, '#059669')
+  ctx.fillStyle = badge
+  ctx.beginPath()
+  ctx.roundRect(200, 293, 200, 34, 8)
+  ctx.fill()
+  ctx.fillStyle = '#FFFFFF'
+  ctx.font = 'bold 18px Arial'
+  ctx.fillText('✓ DINYATAKAN LULUS', 300, 313)
+
+  // Name
+  ctx.fillStyle = '#F8FAFC'
+  ctx.font = 'bold 26px Arial'
+  ctx.textBaseline = 'middle'
+  const displayName = student.name.length > 24 ? student.name.substring(0, 24) + '…' : student.name
+  ctx.fillText(displayName, 300, 370)
+
+  // Details
+  ctx.fillStyle = '#94A3B8'
+  ctx.font = '15px Arial'
+  ctx.fillText(`NISN: ${student.nisn}  •  NIS: ${student.nis}`, 300, 405)
+
+  // Year
+  ctx.fillStyle = '#64748B'
+  ctx.font = '13px Arial'
+  ctx.fillText('Tahun Ajaran 2025/2026', 300, 432)
+
+  // Bottom decoration
+  const line = ctx.createLinearGradient(80, 470, 520, 470)
+  line.addColorStop(0, 'transparent')
+  line.addColorStop(0.5, '#2563EB')
+  line.addColorStop(1, 'transparent')
+  ctx.strokeStyle = line
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  ctx.moveTo(80, 470)
+  ctx.lineTo(520, 470)
+  ctx.stroke()
+
+  ctx.fillStyle = '#475569'
+  ctx.font = '12px Arial'
+  ctx.fillText('Sistem Pengumuman Kelulusan Kelas XII 2026', 300, 500)
+
+  // Stars
+  ctx.fillStyle = '#F59E0B'
+  ctx.font = '18px Arial'
+  ctx.fillText('★ ★ ★ ★ ★', 300, 535)
+
+  return canvas.toDataURL('image/png')
+}
+
 function ResultContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
+  const { theme, setTheme } = useTheme()
   const [student, setStudent] = useState<Student | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [qrDataUrl, setQrDataUrl] = useState('')
+  const [quote, setQuote] = useState('')
+  const [toast, setToast] = useState('')
+  const [showFrameModal, setShowFrameModal] = useState(false)
+  const [frameDataUrl, setFrameDataUrl] = useState('')
   const confettiDone = useRef(false)
 
   const nisn = searchParams.get('nisn') || ''
   const nis = searchParams.get('nis') || ''
 
-  useEffect(() => {
-    if (!nisn || !nis) {
-      router.push('/')
-      return
-    }
-
-    const fetchStudent = async () => {
-      try {
-        const res = await fetch('/api/check', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ nisn, nis }),
-        })
-        const data = await res.json()
-        if (!res.ok) {
-          setError(data.error || 'Data tidak ditemukan')
-        } else {
-          setStudent(data.student)
-          generateQR(data.student)
-        }
-      } catch {
-        setError('Terjadi kesalahan jaringan')
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchStudent()
-  }, [nisn, nis, router])
-
-  useEffect(() => {
-    if (student && !confettiDone.current) {
-      confettiDone.current = true
-      launchConfetti()
-    }
-  }, [student])
-
-  const launchConfetti = async () => {
-    if (typeof window === 'undefined') return
-    const confetti = (await import('canvas-confetti')).default
-    const duration = 5 * 1000
-    const end = Date.now() + duration
-    const colors = ['#2563EB', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6']
-
-    const frame = () => {
-      confetti({
-        particleCount: 3,
-        angle: 60,
-        spread: 55,
-        origin: { x: 0 },
-        colors,
-      })
-      confetti({
-        particleCount: 3,
-        angle: 120,
-        spread: 55,
-        origin: { x: 1 },
-        colors,
-      })
-      if (Date.now() < end) {
-        requestAnimationFrame(frame)
-      }
-    }
-    frame()
+  const showToast = (msg: string) => {
+    setToast(msg)
+    setTimeout(() => setToast(''), 3000)
   }
 
-  const generateQR = async (studentData: Student) => {
+  const triggerConfetti = useCallback(async () => {
+    if (confettiDone.current) return
+    confettiDone.current = true
     try {
-      const QRCode = (await import('qrcode')).default
-      const text = JSON.stringify({
-        name: studentData.name,
-        nisn: studentData.nisn,
-        nis: studentData.nis,
-        status: studentData.status,
-        year: '2026',
-        verified: true,
+      const confetti = (await import('canvas-confetti')).default
+      const end = Date.now() + 4000
+      const colors = ['#2563EB', '#10B981', '#F59E0B', '#EC4899', '#8B5CF6']
+      const frame = () => {
+        confetti({ particleCount: 3, angle: 60, spread: 55, origin: { x: 0 }, colors })
+        confetti({ particleCount: 3, angle: 120, spread: 55, origin: { x: 1 }, colors })
+        if (Date.now() < end) requestAnimationFrame(frame)
+      }
+      frame()
+      setTimeout(() => confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 }, colors }), 200)
+    } catch { /* ignore */ }
+  }, [])
+
+  useEffect(() => {
+    if (!nisn || !nis) { router.push('/'); return }
+    setQuote(QUOTES[Math.floor(Math.random() * QUOTES.length)])
+
+    fetch('/api/check', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nisn, nis }),
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.student) {
+          setStudent(data.student)
+          triggerConfetti()
+          playSuccessSound()
+          import('qrcode').then(({ default: QRCode }) => {
+            QRCode.toDataURL(JSON.stringify({ nama: data.student.name, nisn: data.student.nisn, nis: data.student.nis, status: 'LULUS', tahun: '2025/2026' }), { width: 180, margin: 1 })
+              .then(url => setQrDataUrl(url))
+              .catch(() => {})
+          })
+        } else {
+          setError(data.error || 'Data tidak ditemukan')
+        }
       })
-      const url = await QRCode.toDataURL(text, { width: 200, margin: 2, color: { dark: '#1e3a5f', light: '#ffffff' } })
-      setQrDataUrl(url)
-    } catch {
-      // QR generation failed silently
-    }
+      .catch(() => setError('Gagal memuat data'))
+      .finally(() => setLoading(false))
+  }, [nisn, nis, router, triggerConfetti])
+
+  const shareWhatsApp = () => {
+    if (!student) return
+    const url = window.location.href
+    const text = `Alhamdulillah! 🎓 ${student.name} dinyatakan *LULUS* Tahun Ajaran 2025/2026!\n\nCek hasil kelulusan di: ${url}`
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank')
+  }
+
+  const copyLink = () => {
+    navigator.clipboard.writeText(window.location.href).then(() => showToast('Link berhasil disalin!'))
   }
 
   const downloadPDF = async () => {
     if (!student) return
-    const { jsPDF } = await import('jspdf')
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-
-    // Background gradient simulation
-    doc.setFillColor(37, 99, 235)
-    doc.rect(0, 0, 210, 60, 'F')
-
-    doc.setFillColor(255, 255, 255)
-    doc.rect(0, 60, 210, 237, 'F')
-
-    // Header
-    doc.setTextColor(255, 255, 255)
-    doc.setFontSize(22)
-    doc.setFont('helvetica', 'bold')
-    doc.text('SERTIFIKAT KELULUSAN', 105, 25, { align: 'center' })
-
-    doc.setFontSize(12)
-    doc.setFont('helvetica', 'normal')
-    doc.text('Kelas XII Tahun Ajaran 2025/2026', 105, 35, { align: 'center' })
-
-    // Decorative line
-    doc.setDrawColor(16, 185, 129)
-    doc.setLineWidth(2)
-    doc.line(30, 45, 180, 45)
-
-    // Status badge
-    doc.setFillColor(16, 185, 129)
-    doc.roundedRect(75, 65, 60, 18, 5, 5, 'F')
-    doc.setTextColor(255, 255, 255)
-    doc.setFontSize(14)
-    doc.setFont('helvetica', 'bold')
-    doc.text('LULUS', 105, 77, { align: 'center' })
-
-    // Student info
-    doc.setTextColor(15, 23, 42)
-    doc.setFontSize(11)
-    doc.setFont('helvetica', 'normal')
-    const startY = 100
-
-    const fields = [
-      ['Nama Lengkap', student.name],
-      ['NISN', student.nisn],
-      ['NIS', student.nis],
-      ['Status', student.status],
-      ['Tahun Lulus', '2026'],
-    ]
-
-    fields.forEach(([label, value], i) => {
-      const y = startY + i * 18
+    try {
+      const { jsPDF } = await import('jspdf')
+      const doc = new jsPDF({ format: 'a4', unit: 'mm' })
+      doc.setFillColor(37, 99, 235)
+      doc.rect(0, 0, 210, 42, 'F')
+      doc.setTextColor(255, 255, 255)
+      doc.setFontSize(18)
       doc.setFont('helvetica', 'bold')
-      doc.setTextColor(100, 116, 139)
-      doc.text(`${label}:`, 30, y)
+      doc.text('SURAT KETERANGAN KELULUSAN', 105, 16, { align: 'center' })
+      doc.setFontSize(11)
       doc.setFont('helvetica', 'normal')
-      doc.setTextColor(15, 23, 42)
-      doc.text(value, 80, y)
-      doc.setDrawColor(226, 232, 240)
-      doc.setLineWidth(0.3)
-      doc.line(30, y + 4, 180, y + 4)
-    })
-
-    // QR Code
-    if (qrDataUrl) {
-      doc.addImage(qrDataUrl, 'PNG', 75, 205, 60, 60)
-      doc.setFontSize(8)
-      doc.setTextColor(100, 116, 139)
-      doc.text('Scan QR untuk verifikasi', 105, 270, { align: 'center' })
-    }
-
-    // Footer
-    doc.setFontSize(9)
-    doc.setTextColor(148, 163, 184)
-    doc.text('Dokumen ini diterbitkan secara digital oleh Sistem Pengumuman Kelulusan 2026', 105, 285, { align: 'center' })
-
-    doc.save(`Sertifikat_Kelulusan_${student.name.replace(/\s+/g, '_')}.pdf`)
+      doc.text('Tahun Ajaran 2025/2026', 105, 26, { align: 'center' })
+      doc.setTextColor(0, 0, 0)
+      doc.setFontSize(11)
+      doc.text('Yang bertanda tangan di bawah ini menyatakan bahwa:', 20, 58)
+      const fields = [['Nama Lengkap', student.name], ['NISN', student.nisn], ['NIS', student.nis], ['Status', 'LULUS'], ['Tahun Ajaran', '2025/2026']]
+      let y = 72
+      fields.forEach(([l, v]) => {
+        doc.setFont('helvetica', 'bold'); doc.text(l, 30, y)
+        doc.setFont('helvetica', 'normal'); doc.text(`: ${v}`, 80, y); y += 12
+      })
+      doc.setFillColor(16, 185, 129)
+      doc.roundedRect(30, y + 4, 150, 16, 3, 3, 'F')
+      doc.setTextColor(255, 255, 255)
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(13)
+      doc.text('DINYATAKAN LULUS', 105, y + 15, { align: 'center' })
+      doc.setTextColor(0, 0, 0)
+      doc.setFont('helvetica', 'italic'); doc.setFontSize(10)
+      doc.text(`"${quote}"`, 105, y + 36, { align: 'center', maxWidth: 160 })
+      if (qrDataUrl) { doc.addImage(qrDataUrl, 'PNG', 20, y + 58, 32, 32); doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.setTextColor(100, 100, 100); doc.text('Scan untuk verifikasi', 22, y + 93) }
+      const dateStr = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
+      doc.setTextColor(0, 0, 0); doc.setFont('helvetica', 'normal'); doc.setFontSize(10)
+      doc.text(`Jakarta, ${dateStr}`, 150, y + 68); doc.text('Kepala Sekolah,', 150, y + 76); doc.text('_________________', 148, y + 92)
+      doc.save(`Surat_Kelulusan_${student.name.replace(/\s+/g, '_')}.pdf`)
+    } catch (e) { console.error(e) }
   }
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-blue-50 dark:from-slate-900 dark:to-blue-950">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-slate-600 dark:text-slate-300">Memuat data...</p>
-        </div>
+  const downloadSertifikat = async () => {
+    if (!student) return
+    try {
+      const { jsPDF } = await import('jspdf')
+      const doc = new jsPDF({ format: 'a4', unit: 'mm', orientation: 'landscape' })
+      doc.setFillColor(15, 23, 42); doc.rect(0, 0, 297, 210, 'F')
+      for (let i = 0; i < 4; i++) { doc.setDrawColor(37, 99, 235); doc.setLineWidth(0.5); doc.rect(6 + i * 6, 6 + i * 6, 285 - i * 12, 198 - i * 12) }
+      doc.setTextColor(37, 99, 235); doc.setFontSize(10); doc.setFont('helvetica', 'bold')
+      doc.text('SERTIFIKAT KELULUSAN', 148, 34, { align: 'center' })
+      doc.setFontSize(7); doc.setTextColor(16, 185, 129); doc.text('CERTIFICATE OF GRADUATION', 148, 42, { align: 'center' })
+      doc.setTextColor(200, 200, 200); doc.setFontSize(8); doc.setFont('helvetica', 'normal')
+      doc.text('Diberikan kepada:', 148, 60, { align: 'center' })
+      doc.setTextColor(255, 255, 255); doc.setFontSize(20); doc.setFont('helvetica', 'bold')
+      doc.text(student.name.toUpperCase(), 148, 76, { align: 'center' })
+      doc.setTextColor(200, 200, 200); doc.setFontSize(8); doc.setFont('helvetica', 'normal')
+      doc.text(`NISN: ${student.nisn}  |  NIS: ${student.nis}`, 148, 90, { align: 'center' })
+      doc.text('Telah menyelesaikan pendidikan dan dinyatakan', 148, 103, { align: 'center' })
+      doc.setFillColor(37, 99, 235); doc.roundedRect(103, 108, 90, 16, 2, 2, 'F')
+      doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(12)
+      doc.text('L U L U S', 148, 119, { align: 'center' })
+      doc.setTextColor(200, 200, 200); doc.setFont('helvetica', 'normal'); doc.setFontSize(7)
+      doc.text('Tahun Ajaran 2025/2026', 148, 132, { align: 'center' })
+      const dateStr = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
+      doc.text(`Jakarta, ${dateStr}`, 148, 144, { align: 'center' })
+      doc.text('Kepala Sekolah', 80, 160); doc.text('_________________', 70, 173)
+      doc.text('Wali Kelas', 198, 160); doc.text('_________________', 190, 173)
+      if (qrDataUrl) { doc.addImage(qrDataUrl, 'PNG', 130, 154, 36, 36); doc.setFontSize(6); doc.setTextColor(100, 100, 100); doc.text('Scan untuk verifikasi', 133, 192) }
+      doc.save(`Sertifikat_${student.name.replace(/\s+/g, '_')}.pdf`)
+    } catch (e) { console.error(e) }
+  }
+
+  const openPhotoFrame = () => {
+    if (!student) return
+    const url = generatePhotoFrame(student)
+    setFrameDataUrl(url)
+    setShowFrameModal(true)
+  }
+
+  const downloadFrame = () => {
+    if (!frameDataUrl || !student) return
+    const a = document.createElement('a')
+    a.href = frameDataUrl
+    a.download = `Frame_${student.name.replace(/\s+/g, '_')}.png`
+    a.click()
+  }
+
+  if (loading) return (
+    <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900">
+      <div className="text-center">
+        <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+        <p className="text-slate-500 dark:text-slate-400">Memuat data...</p>
       </div>
-    )
-  }
+    </div>
+  )
 
-  if (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-blue-50 dark:from-slate-900 dark:to-blue-950 p-6">
-        <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl p-8 max-w-md w-full text-center">
-          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <span className="text-3xl">X</span>
-          </div>
-          <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-2">Data Tidak Ditemukan</h2>
-          <p className="text-slate-500 dark:text-slate-400 mb-6">{error}</p>
-          <button
-            onClick={() => router.push('/')}
-            className="bg-blue-600 text-white px-6 py-3 rounded-xl font-semibold hover:bg-blue-700 transition"
-          >
-            Kembali ke Beranda
-          </button>
-        </div>
+  if (error) return (
+    <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900 px-4">
+      <div className="text-center max-w-md">
+        <div className="text-6xl mb-4">❌</div>
+        <h2 className="text-2xl font-black text-slate-800 dark:text-slate-100 mb-2">Data Tidak Ditemukan</h2>
+        <p className="text-slate-500 dark:text-slate-400 mb-6">{error}</p>
+        <button onClick={() => router.push('/')} className="px-6 py-3 rounded-xl font-bold text-white" style={{ background: 'linear-gradient(135deg,#2563EB,#10B981)' }}>
+          Coba Lagi
+        </button>
       </div>
-    )
-  }
+    </div>
+  )
 
   if (!student) return null
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-emerald-50 dark:from-slate-900 dark:via-blue-950 dark:to-slate-900 relative overflow-hidden">
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-20 -right-20 w-80 h-80 bg-blue-300 dark:bg-blue-800 rounded-full filter blur-3xl opacity-30 animate-blob" />
-        <div className="absolute -bottom-20 -left-20 w-80 h-80 bg-emerald-300 dark:bg-emerald-800 rounded-full filter blur-3xl opacity-30 animate-blob animation-delay-2000" />
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-emerald-50 dark:from-slate-900 dark:via-blue-950 dark:to-slate-900">
+      {/* Toast */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div initial={{ opacity: 0, y: -50 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+            className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-xl bg-emerald-600 text-white font-medium shadow-xl flex items-center gap-2 whitespace-nowrap">
+            ✓ {toast}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Watermark */}
+      <div className="fixed inset-0 pointer-events-none z-50 overflow-hidden select-none" style={{ opacity: 0.04 }}>
+        {Array.from({ length: 9 }).map((_, i) => (
+          <div key={i} className="absolute font-black text-2xl whitespace-nowrap text-slate-900 dark:text-white"
+            style={{ top: `${(i % 3) * 33 + 5}%`, left: `${Math.floor(i / 3) * 33}%`, transform: 'rotate(-30deg)' }}>
+            {student.name} • LULUS 2026
+          </div>
+        ))}
       </div>
 
-      <div className="relative z-10 max-w-2xl mx-auto px-6 py-12">
-        <motion.button
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          onClick={() => router.push('/')}
-          className="flex items-center gap-2 text-slate-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 mb-8 transition"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Kembali ke Beranda
-        </motion.button>
+      {/* Nav */}
+      <nav className="sticky top-0 z-40 px-6 py-4 flex items-center justify-between backdrop-blur-md bg-white/80 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-700">
+        <button onClick={() => router.push('/')} className="flex items-center gap-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-blue-600 transition-colors">
+          <ArrowLeft className="w-4 h-4" /> Kembali
+        </button>
+        <span className="font-bold text-sm text-slate-800 dark:text-slate-100">Hasil Kelulusan</span>
+        <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="p-2 rounded-xl bg-slate-100 dark:bg-slate-700 hover:scale-105 transition-transform">
+          {theme === 'dark' ? <Sun className="w-5 h-5 text-yellow-400" /> : <Moon className="w-5 h-5 text-slate-600" />}
+        </button>
+      </nav>
 
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8 }}
-          className="text-center mb-8"
-        >
-          <div className="text-6xl mb-4">🎉</div>
-          <h1 className="text-4xl font-black text-slate-800 dark:text-slate-100 mb-2">Selamat!</h1>
-          <p className="text-slate-500 dark:text-slate-400">Anda dinyatakan <strong className="text-emerald-600 dark:text-emerald-400">LULUS</strong></p>
-        </motion.div>
+      <div className="max-w-2xl mx-auto px-4 py-10">
+        <motion.div initial={{ opacity: 0, scale: 0.92, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} transition={{ duration: 0.6, type: 'spring' }}
+          className="rounded-3xl overflow-hidden shadow-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 animate-glow">
 
-        {/* Student Card */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.6, delay: 0.2 }}
-          className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-700 animate-glow mb-6"
-        >
-          {/* Card Header */}
-          <div className="bg-gradient-to-r from-blue-600 to-emerald-500 p-6 text-white">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
-                <GraduationCap className="w-6 h-6" />
-              </div>
-              <div>
-                <p className="text-blue-100 text-sm font-medium">Sertifikat Kelulusan</p>
-                <p className="font-bold text-lg">Kelas XII 2026</p>
-              </div>
-            </div>
+          {/* Header */}
+          <div className="relative p-8 text-center text-white overflow-hidden" style={{ background: 'linear-gradient(135deg, #2563EB 0%, #10B981 100%)' }}>
+            <div className="absolute -top-10 -right-10 w-40 h-40 rounded-full bg-white/10" />
+            <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-white/10" />
+            <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 0.3, type: 'spring' }}
+              className="relative w-20 h-20 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-3 backdrop-blur-sm">
+              <CheckCircle className="w-12 h-12 text-white" />
+            </motion.div>
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
+              <p className="text-lg font-bold mb-1">✅ SELAMAT!</p>
+              <h1 className="text-3xl font-black tracking-wide">ANDA DINYATAKAN</h1>
+              <h2 className="text-5xl font-black tracking-widest mt-1" style={{ textShadow: '0 2px 12px rgba(0,0,0,0.3)' }}>LULUS</h2>
+              <p className="text-white/80 text-sm mt-2">Tahun Ajaran 2025/2026</p>
+            </motion.div>
           </div>
 
-          {/* Card Body */}
-          <div className="p-6">
-            <div className="flex items-start gap-4 mb-6">
-              <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-emerald-500 rounded-2xl flex items-center justify-center text-white text-2xl font-black flex-shrink-0">
-                {student.name.charAt(0)}
-              </div>
-              <div>
-                <h2 className="text-xl font-black text-slate-800 dark:text-slate-100">{student.name}</h2>
-                <div className="flex items-center gap-2 mt-1">
-                  <CheckCircle className="w-4 h-4 text-emerald-500" />
-                  <span className="text-emerald-600 dark:text-emerald-400 font-bold text-sm">DINYATAKAN LULUS</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 mb-6">
-              {[
-                { label: 'NISN', value: student.nisn },
-                { label: 'NIS', value: student.nis },
-                { label: 'Status', value: student.status },
-                { label: 'Tahun', value: '2026' },
-              ].map((item, i) => (
-                <div key={i} className="bg-slate-50 dark:bg-slate-700/50 rounded-xl p-3">
-                  <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mb-1">{item.label}</p>
-                  <p className="font-bold text-slate-800 dark:text-slate-100 text-sm">{item.value}</p>
+          <div className="p-6 md:p-8">
+            {/* Student info */}
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }} className="space-y-3 mb-6">
+              {[['Nama Lengkap', student.name, false, true], ['NISN', student.nisn, true, false], ['NIS', student.nis, true, false], ['Status', student.status, false, false]].map(([l, v, mono, bold]) => (
+                <div key={String(l)} className="flex items-center justify-between py-2.5 border-b border-slate-100 dark:border-slate-700">
+                  <span className="text-sm text-slate-500 dark:text-slate-400">{String(l)}</span>
+                  <span className={`font-bold ${mono ? 'font-mono text-blue-600 dark:text-blue-400' : ''} ${bold ? 'text-slate-800 dark:text-slate-100' : ''} ${String(l) === 'Status' ? 'px-3 py-1 rounded-full bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-400 text-sm' : ''}`}>
+                    {String(v)}
+                  </span>
                 </div>
               ))}
-            </div>
+            </motion.div>
 
+            {/* Quote */}
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }}
+              className="p-4 rounded-2xl bg-blue-50 dark:bg-blue-950/40 text-slate-600 dark:text-slate-300 text-sm italic text-center mb-6 border border-blue-100 dark:border-blue-900">
+              &ldquo;{quote}&rdquo;
+            </motion.div>
+
+            {/* QR Code */}
             {qrDataUrl && (
-              <div className="text-center border-t border-slate-100 dark:border-slate-700 pt-6">
-                <p className="text-sm text-slate-500 dark:text-slate-400 mb-3">QR Code Verifikasi</p>
-                <img src={qrDataUrl} alt="QR Code" className="mx-auto rounded-xl w-32 h-32" />
-              </div>
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.7 }} className="flex flex-col items-center mb-6">
+                <div className="p-3 rounded-2xl bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 shadow-md inline-block">
+                  <img src={qrDataUrl} alt="QR Verifikasi" className="w-28 h-28" />
+                </div>
+                <p className="text-xs text-slate-400 mt-2">Scan QR untuk verifikasi keaslian dokumen</p>
+              </motion.div>
             )}
+
+            {/* Share buttons */}
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.8 }} className="grid grid-cols-2 gap-2 mb-4">
+              <button onClick={shareWhatsApp}
+                className="flex items-center justify-center gap-2 py-3 rounded-xl font-semibold text-white text-sm transition-all hover:-translate-y-0.5"
+                style={{ background: 'linear-gradient(135deg,#25D366,#128C7E)' }}>
+                <Share2 className="w-4 h-4" /> WhatsApp
+              </button>
+              <button onClick={copyLink}
+                className="flex items-center justify-center gap-2 py-3 rounded-xl font-semibold text-sm border-2 border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all hover:-translate-y-0.5">
+                <Copy className="w-4 h-4" /> Salin Link
+              </button>
+            </motion.div>
+
+            {/* Action buttons */}
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.9 }} className="space-y-3">
+              <button onClick={downloadPDF}
+                className="w-full py-3.5 rounded-xl font-bold text-white flex items-center justify-center gap-2 transition-all hover:-translate-y-0.5 hover:shadow-lg"
+                style={{ background: 'linear-gradient(135deg,#2563EB,#1d4ed8)' }}>
+                <Download className="w-5 h-5" /> Download Surat Kelulusan (PDF)
+              </button>
+              <button onClick={downloadSertifikat}
+                className="w-full py-3.5 rounded-xl font-bold text-white flex items-center justify-center gap-2 transition-all hover:-translate-y-0.5 hover:shadow-lg"
+                style={{ background: 'linear-gradient(135deg,#10B981,#059669)' }}>
+                <Award className="w-5 h-5" /> Download Sertifikat (PDF)
+              </button>
+              <button onClick={openPhotoFrame}
+                className="w-full py-3.5 rounded-xl font-bold text-white flex items-center justify-center gap-2 transition-all hover:-translate-y-0.5 hover:shadow-lg"
+                style={{ background: 'linear-gradient(135deg,#8B5CF6,#6D28D9)' }}>
+                <Image className="w-5 h-5" /> Buat Photo Frame Wisuda
+              </button>
+              <button onClick={() => window.print()}
+                className="w-full py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 border-2 border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all hover:-translate-y-0.5">
+                <Printer className="w-5 h-5" /> Cetak Halaman
+              </button>
+            </motion.div>
+
+            <div className="text-center mt-6">
+              <button onClick={() => router.push('/')} className="text-sm text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors flex items-center gap-1 mx-auto">
+                <ArrowLeft className="w-4 h-4" /> Kembali ke Halaman Utama
+              </button>
+            </div>
           </div>
         </motion.div>
-
-        {/* Action Buttons */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 }}
-          className="flex gap-4"
-        >
-          <button
-            onClick={downloadPDF}
-            className="flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-blue-500/30"
-          >
-            <Download className="w-4 h-4" />
-            Download PDF
-          </button>
-          <button
-            onClick={() => router.push('/')}
-            className="flex-1 flex items-center justify-center gap-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold py-3 rounded-xl transition"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Beranda
-          </button>
-        </motion.div>
       </div>
+
+      {/* Photo Frame Modal */}
+      <AnimatePresence>
+        {showFrameModal && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-8">
+            <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} exit={{ scale: 0.9 }}
+              className="bg-white dark:bg-slate-800 rounded-3xl p-6 max-w-sm w-full shadow-2xl">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-black text-lg dark:text-white">Photo Frame Wisuda</h3>
+                <button onClick={() => setShowFrameModal(false)} className="p-2 rounded-xl bg-slate-100 dark:bg-slate-700">
+                  <X className="w-4 h-4 text-slate-600 dark:text-slate-300" />
+                </button>
+              </div>
+              {frameDataUrl && <img src={frameDataUrl} alt="Photo Frame" className="w-full rounded-2xl mb-4 shadow-lg" />}
+              <button onClick={downloadFrame}
+                className="w-full py-3 rounded-xl font-bold text-white flex items-center justify-center gap-2"
+                style={{ background: 'linear-gradient(135deg,#8B5CF6,#6D28D9)' }}>
+                <Download className="w-5 h-5" /> Download Frame (PNG)
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
@@ -338,8 +492,8 @@ function ResultContent() {
 export default function ResultPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900">
+        <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
       </div>
     }>
       <ResultContent />

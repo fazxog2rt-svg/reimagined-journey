@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
-import { LogOut, Users, Plus, Search, Edit2, Trash2, Download, X, Check } from 'lucide-react'
+import { LogOut, Users, Plus, Search, Edit2, Trash2, Download, X, Check, Activity, Settings, Upload } from 'lucide-react'
 
 interface Student {
   id: number
@@ -19,6 +19,25 @@ interface EditingStudent {
   nis: string
 }
 
+interface ActivityLog {
+  id: number
+  timestamp: string
+  nisn: string
+  nis: string
+  found: boolean
+  ip: string
+}
+
+interface SiteSettings {
+  announcementDate: string
+  announcementActive: boolean
+  schoolName: string
+  principalName: string
+  principalNip: string
+}
+
+type Tab = 'students' | 'logs' | 'settings'
+
 export default function AdminPage() {
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [token, setToken] = useState('')
@@ -26,13 +45,34 @@ export default function AdminPage() {
   const [password, setPassword] = useState('')
   const [loginError, setLoginError] = useState('')
   const [loginLoading, setLoginLoading] = useState(false)
+  const [activeTab, setActiveTab] = useState<Tab>('students')
 
+  // Students state
   const [students, setStudents] = useState<Student[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [showAddForm, setShowAddForm] = useState(false)
   const [editingStudent, setEditingStudent] = useState<EditingStudent | null>(null)
   const [newStudent, setNewStudent] = useState({ name: '', nisn: '', nis: '' })
   const [loadingStudents, setLoadingStudents] = useState(false)
+
+  // Logs state
+  const [logs, setLogs] = useState<ActivityLog[]>([])
+  const [loadingLogs, setLoadingLogs] = useState(false)
+
+  // Settings state
+  const [settings, setSettings] = useState<SiteSettings>({
+    announcementDate: '',
+    announcementActive: true,
+    schoolName: '',
+    principalName: '',
+    principalNip: '',
+  })
+  const [savingSettings, setSavingSettings] = useState(false)
+  const [settingsSaved, setSettingsSaved] = useState(false)
+
+  // CSV import
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [importStatus, setImportStatus] = useState('')
 
   useEffect(() => {
     const savedToken = localStorage.getItem('adminToken')
@@ -45,8 +85,15 @@ export default function AdminPage() {
   useEffect(() => {
     if (isLoggedIn && token) {
       fetchStudents()
+      fetchSettings()
     }
   }, [isLoggedIn, token])
+
+  useEffect(() => {
+    if (isLoggedIn && token && activeTab === 'logs') {
+      fetchLogs()
+    }
+  }, [activeTab, isLoggedIn, token])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -84,6 +131,25 @@ export default function AdminPage() {
     } finally {
       setLoadingStudents(false)
     }
+  }
+
+  const fetchLogs = async () => {
+    setLoadingLogs(true)
+    try {
+      const res = await fetch('/api/admin/logs', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = await res.json()
+      if (res.ok) setLogs(data.logs)
+    } finally {
+      setLoadingLogs(false)
+    }
+  }
+
+  const fetchSettings = async () => {
+    const res = await fetch('/api/admin/settings')
+    const data = await res.json()
+    if (res.ok) setSettings(data.settings)
   }
 
   const handleAddStudent = async (e: React.FormEvent) => {
@@ -133,7 +199,7 @@ export default function AdminPage() {
 
   const exportCSV = () => {
     const header = 'ID,Nama,NISN,NIS,Status\n'
-    const rows = students.map(s => `${s.id},${s.name},${s.nisn},${s.nis},${s.status}`).join('\n')
+    const rows = students.map(s => `${s.id},"${s.name}",${s.nisn},${s.nis},${s.status}`).join('\n')
     const blob = new Blob([header + rows], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -141,6 +207,48 @@ export default function AdminPage() {
     a.download = 'data_siswa_2026.csv'
     a.click()
     URL.revokeObjectURL(url)
+  }
+
+  const handleImportCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setImportStatus('Memproses...')
+    const text = await file.text()
+    const lines = text.trim().split('\n').slice(1) // skip header
+    let imported = 0
+    let failed = 0
+    for (const line of lines) {
+      const parts = line.split(',').map(p => p.replace(/^"|"$/g, '').trim())
+      const [, name, nisn, nis] = parts
+      if (!name || !nisn || !nis) { failed++; continue }
+      const res = await fetch('/api/admin/students', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name, nisn, nis }),
+      })
+      if (res.ok) imported++; else failed++
+    }
+    setImportStatus(`Berhasil import ${imported} siswa${failed > 0 ? `, ${failed} gagal` : ''}.`)
+    fetchStudents()
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  const handleSaveSettings = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSavingSettings(true)
+    try {
+      const res = await fetch('/api/admin/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(settings),
+      })
+      if (res.ok) {
+        setSettingsSaved(true)
+        setTimeout(() => setSettingsSaved(false), 3000)
+      }
+    } finally {
+      setSavingSettings(false)
+    }
   }
 
   const filteredStudents = students.filter(s =>
@@ -164,7 +272,6 @@ export default function AdminPage() {
             <h1 className="text-xl font-bold text-white">Admin Panel</h1>
             <p className="text-slate-400 text-sm mt-1">Sistem Pengumuman Kelulusan 2026</p>
           </div>
-
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-1">Username</label>
@@ -208,7 +315,6 @@ export default function AdminPage() {
 
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-900">
-      {/* Header */}
       <header className="bg-white dark:bg-slate-800 shadow-sm border-b border-slate-200 dark:border-slate-700">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -232,11 +338,11 @@ export default function AdminPage() {
 
       <div className="max-w-7xl mx-auto px-6 py-8">
         {/* Stats */}
-        <div className="grid grid-cols-3 gap-4 mb-8">
+        <div className="grid grid-cols-3 gap-4 mb-6">
           {[
             { label: 'Total Siswa', value: students.length, color: 'bg-blue-500' },
             { label: 'Status Lulus', value: students.filter(s => s.status === 'LULUS').length, color: 'bg-emerald-500' },
-            { label: 'Persentase', value: students.length > 0 ? '100%' : '0%', color: 'bg-purple-500' },
+            { label: 'Log Aktivitas', value: logs.length, color: 'bg-purple-500' },
           ].map((stat, i) => (
             <div key={i} className="bg-white dark:bg-slate-800 rounded-2xl p-5 shadow-sm border border-slate-200 dark:border-slate-700">
               <div className={`w-8 h-8 ${stat.color} rounded-lg mb-3`} />
@@ -246,177 +352,338 @@ export default function AdminPage() {
           ))}
         </div>
 
-        {/* Controls */}
-        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
-          <div className="flex flex-col sm:flex-row gap-4 mb-6">
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                placeholder="Cari nama, NISN, atau NIS..."
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              />
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={exportCSV}
-                className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-medium transition"
-              >
-                <Download className="w-4 h-4" />
-                Export CSV
-              </button>
-              <button
-                onClick={() => setShowAddForm(true)}
-                className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium transition"
-              >
-                <Plus className="w-4 h-4" />
-                Tambah
-              </button>
-            </div>
-          </div>
-
-          {/* Add Form */}
-          {showAddForm && (
-            <motion.form
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              onSubmit={handleAddStudent}
-              className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-4 mb-4 border border-blue-200 dark:border-blue-800"
+        {/* Tabs */}
+        <div className="flex gap-1 mb-4 bg-slate-200 dark:bg-slate-800 rounded-xl p-1 w-fit">
+          {([
+            { id: 'students', label: 'Data Siswa', icon: Users },
+            { id: 'logs', label: 'Log Aktivitas', icon: Activity },
+            { id: 'settings', label: 'Pengaturan', icon: Settings },
+          ] as { id: Tab; label: string; icon: React.ElementType }[]).map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition ${
+                activeTab === tab.id
+                  ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-100'
+              }`}
             >
-              <h3 className="font-semibold text-slate-800 dark:text-slate-100 mb-3">Tambah Siswa Baru</h3>
-              <div className="grid grid-cols-3 gap-3 mb-3">
-                <input
-                  type="text"
-                  placeholder="Nama lengkap"
-                  value={newStudent.name}
-                  onChange={e => setNewStudent(p => ({ ...p, name: e.target.value }))}
-                  className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                />
-                <input
-                  type="text"
-                  placeholder="NISN"
-                  value={newStudent.nisn}
-                  onChange={e => setNewStudent(p => ({ ...p, nisn: e.target.value }))}
-                  className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                />
-                <input
-                  type="text"
-                  placeholder="NIS"
-                  value={newStudent.nis}
-                  onChange={e => setNewStudent(p => ({ ...p, nis: e.target.value }))}
-                  className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                />
-              </div>
-              <div className="flex gap-2">
-                <button type="submit" className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium">
-                  <Check className="w-3 h-3" /> Simpan
-                </button>
-                <button type="button" onClick={() => setShowAddForm(false)} className="flex items-center gap-1 px-3 py-1.5 bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg text-sm">
-                  <X className="w-3 h-3" /> Batal
-                </button>
-              </div>
-            </motion.form>
-          )}
-
-          {/* Edit Form */}
-          {editingStudent && (
-            <motion.form
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              onSubmit={handleEditStudent}
-              className="bg-yellow-50 dark:bg-yellow-900/20 rounded-xl p-4 mb-4 border border-yellow-200 dark:border-yellow-800"
-            >
-              <h3 className="font-semibold text-slate-800 dark:text-slate-100 mb-3">Edit Siswa</h3>
-              <div className="grid grid-cols-3 gap-3 mb-3">
-                <input
-                  type="text"
-                  value={editingStudent.name}
-                  onChange={e => setEditingStudent(p => p ? { ...p, name: e.target.value } : p)}
-                  className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <input
-                  type="text"
-                  value={editingStudent.nisn}
-                  onChange={e => setEditingStudent(p => p ? { ...p, nisn: e.target.value } : p)}
-                  className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <input
-                  type="text"
-                  value={editingStudent.nis}
-                  onChange={e => setEditingStudent(p => p ? { ...p, nis: e.target.value } : p)}
-                  className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div className="flex gap-2">
-                <button type="submit" className="flex items-center gap-1 px-3 py-1.5 bg-yellow-600 text-white rounded-lg text-sm font-medium">
-                  <Check className="w-3 h-3" /> Update
-                </button>
-                <button type="button" onClick={() => setEditingStudent(null)} className="flex items-center gap-1 px-3 py-1.5 bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg text-sm">
-                  <X className="w-3 h-3" /> Batal
-                </button>
-              </div>
-            </motion.form>
-          )}
-
-          {/* Table */}
-          {loadingStudents ? (
-            <div className="text-center py-12 text-slate-500">Memuat data...</div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 dark:border-slate-700">
-                    <th className="text-left py-3 px-2 text-slate-500 dark:text-slate-400 font-medium">No</th>
-                    <th className="text-left py-3 px-2 text-slate-500 dark:text-slate-400 font-medium">Nama</th>
-                    <th className="text-left py-3 px-2 text-slate-500 dark:text-slate-400 font-medium">NISN</th>
-                    <th className="text-left py-3 px-2 text-slate-500 dark:text-slate-400 font-medium">NIS</th>
-                    <th className="text-left py-3 px-2 text-slate-500 dark:text-slate-400 font-medium">Status</th>
-                    <th className="text-left py-3 px-2 text-slate-500 dark:text-slate-400 font-medium">Aksi</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredStudents.map((s, i) => (
-                    <tr key={s.id} className="border-b border-slate-100 dark:border-slate-700/50 hover:bg-slate-50 dark:hover:bg-slate-700/30">
-                      <td className="py-3 px-2 text-slate-500">{i + 1}</td>
-                      <td className="py-3 px-2 font-medium text-slate-800 dark:text-slate-100">{s.name}</td>
-                      <td className="py-3 px-2 text-slate-600 dark:text-slate-300 font-mono text-xs">{s.nisn}</td>
-                      <td className="py-3 px-2 text-slate-600 dark:text-slate-300">{s.nis}</td>
-                      <td className="py-3 px-2">
-                        <span className="inline-flex items-center gap-1 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 text-xs font-bold px-2 py-1 rounded-full">
-                          {s.status}
-                        </span>
-                      </td>
-                      <td className="py-3 px-2">
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => setEditingStudent({ id: s.id, name: s.name, nisn: s.nisn, nis: s.nis })}
-                            className="p-1.5 text-blue-600 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-lg transition"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteStudent(s.id)}
-                            className="p-1.5 text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {filteredStudents.length === 0 && (
-                <div className="text-center py-12 text-slate-400">Tidak ada data ditemukan</div>
-              )}
-            </div>
-          )}
+              <tab.icon className="w-4 h-4" />
+              {tab.label}
+            </button>
+          ))}
         </div>
+
+        {/* Tab: Data Siswa */}
+        {activeTab === 'students' && (
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+            <div className="flex flex-col sm:flex-row gap-4 mb-6">
+              <div className="flex-1 relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="Cari nama, NISN, atau NIS..."
+                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                />
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-sm font-medium transition"
+                >
+                  <Upload className="w-4 h-4" />
+                  Import CSV
+                </button>
+                <input ref={fileInputRef} type="file" accept=".csv" onChange={handleImportCSV} className="hidden" />
+                <button
+                  onClick={exportCSV}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-medium transition"
+                >
+                  <Download className="w-4 h-4" />
+                  Export CSV
+                </button>
+                <button
+                  onClick={() => setShowAddForm(true)}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium transition"
+                >
+                  <Plus className="w-4 h-4" />
+                  Tambah
+                </button>
+              </div>
+            </div>
+
+            {importStatus && (
+              <div className="bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800 text-violet-700 dark:text-violet-300 rounded-xl px-4 py-3 text-sm mb-4">
+                {importStatus}
+              </div>
+            )}
+
+            {showAddForm && (
+              <motion.form
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                onSubmit={handleAddStudent}
+                className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-4 mb-4 border border-blue-200 dark:border-blue-800"
+              >
+                <h3 className="font-semibold text-slate-800 dark:text-slate-100 mb-3">Tambah Siswa Baru</h3>
+                <div className="grid grid-cols-3 gap-3 mb-3">
+                  <input
+                    type="text"
+                    placeholder="Nama lengkap"
+                    value={newStudent.name}
+                    onChange={e => setNewStudent(p => ({ ...p, name: e.target.value }))}
+                    className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                  <input
+                    type="text"
+                    placeholder="NISN"
+                    value={newStudent.nisn}
+                    onChange={e => setNewStudent(p => ({ ...p, nisn: e.target.value }))}
+                    className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                  <input
+                    type="text"
+                    placeholder="NIS"
+                    value={newStudent.nis}
+                    onChange={e => setNewStudent(p => ({ ...p, nis: e.target.value }))}
+                    className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button type="submit" className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium">
+                    <Check className="w-3 h-3" /> Simpan
+                  </button>
+                  <button type="button" onClick={() => setShowAddForm(false)} className="flex items-center gap-1 px-3 py-1.5 bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg text-sm">
+                    <X className="w-3 h-3" /> Batal
+                  </button>
+                </div>
+              </motion.form>
+            )}
+
+            {editingStudent && (
+              <motion.form
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                onSubmit={handleEditStudent}
+                className="bg-yellow-50 dark:bg-yellow-900/20 rounded-xl p-4 mb-4 border border-yellow-200 dark:border-yellow-800"
+              >
+                <h3 className="font-semibold text-slate-800 dark:text-slate-100 mb-3">Edit Siswa</h3>
+                <div className="grid grid-cols-3 gap-3 mb-3">
+                  <input
+                    type="text"
+                    value={editingStudent.name}
+                    onChange={e => setEditingStudent(p => p ? { ...p, name: e.target.value } : p)}
+                    className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <input
+                    type="text"
+                    value={editingStudent.nisn}
+                    onChange={e => setEditingStudent(p => p ? { ...p, nisn: e.target.value } : p)}
+                    className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <input
+                    type="text"
+                    value={editingStudent.nis}
+                    onChange={e => setEditingStudent(p => p ? { ...p, nis: e.target.value } : p)}
+                    className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button type="submit" className="flex items-center gap-1 px-3 py-1.5 bg-yellow-600 text-white rounded-lg text-sm font-medium">
+                    <Check className="w-3 h-3" /> Update
+                  </button>
+                  <button type="button" onClick={() => setEditingStudent(null)} className="flex items-center gap-1 px-3 py-1.5 bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg text-sm">
+                    <X className="w-3 h-3" /> Batal
+                  </button>
+                </div>
+              </motion.form>
+            )}
+
+            {loadingStudents ? (
+              <div className="text-center py-12 text-slate-500">Memuat data...</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 dark:border-slate-700">
+                      <th className="text-left py-3 px-2 text-slate-500 dark:text-slate-400 font-medium">No</th>
+                      <th className="text-left py-3 px-2 text-slate-500 dark:text-slate-400 font-medium">Nama</th>
+                      <th className="text-left py-3 px-2 text-slate-500 dark:text-slate-400 font-medium">NISN</th>
+                      <th className="text-left py-3 px-2 text-slate-500 dark:text-slate-400 font-medium">NIS</th>
+                      <th className="text-left py-3 px-2 text-slate-500 dark:text-slate-400 font-medium">Status</th>
+                      <th className="text-left py-3 px-2 text-slate-500 dark:text-slate-400 font-medium">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredStudents.map((s, i) => (
+                      <tr key={s.id} className="border-b border-slate-100 dark:border-slate-700/50 hover:bg-slate-50 dark:hover:bg-slate-700/30">
+                        <td className="py-3 px-2 text-slate-500">{i + 1}</td>
+                        <td className="py-3 px-2 font-medium text-slate-800 dark:text-slate-100">{s.name}</td>
+                        <td className="py-3 px-2 text-slate-600 dark:text-slate-300 font-mono text-xs">{s.nisn}</td>
+                        <td className="py-3 px-2 text-slate-600 dark:text-slate-300">{s.nis}</td>
+                        <td className="py-3 px-2">
+                          <span className="inline-flex items-center gap-1 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 text-xs font-bold px-2 py-1 rounded-full">
+                            {s.status}
+                          </span>
+                        </td>
+                        <td className="py-3 px-2">
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => setEditingStudent({ id: s.id, name: s.name, nisn: s.nisn, nis: s.nis })}
+                              className="p-1.5 text-blue-600 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-lg transition"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteStudent(s.id)}
+                              className="p-1.5 text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {filteredStudents.length === 0 && (
+                  <div className="text-center py-12 text-slate-400">Tidak ada data ditemukan</div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tab: Log Aktivitas */}
+        {activeTab === 'logs' && (
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-semibold text-slate-800 dark:text-slate-100">Log Aktivitas Pencarian</h2>
+              <button
+                onClick={fetchLogs}
+                className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                Refresh
+              </button>
+            </div>
+            {loadingLogs ? (
+              <div className="text-center py-12 text-slate-500">Memuat log...</div>
+            ) : logs.length === 0 ? (
+              <div className="text-center py-12 text-slate-400">Belum ada aktivitas</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 dark:border-slate-700">
+                      <th className="text-left py-3 px-2 text-slate-500 font-medium">Waktu</th>
+                      <th className="text-left py-3 px-2 text-slate-500 font-medium">NISN</th>
+                      <th className="text-left py-3 px-2 text-slate-500 font-medium">NIS</th>
+                      <th className="text-left py-3 px-2 text-slate-500 font-medium">Status</th>
+                      <th className="text-left py-3 px-2 text-slate-500 font-medium">IP</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {logs.map(log => (
+                      <tr key={log.id} className="border-b border-slate-100 dark:border-slate-700/50 hover:bg-slate-50 dark:hover:bg-slate-700/30">
+                        <td className="py-3 px-2 text-slate-500 text-xs font-mono whitespace-nowrap">
+                          {new Date(log.timestamp).toLocaleString('id-ID')}
+                        </td>
+                        <td className="py-3 px-2 font-mono text-xs text-slate-700 dark:text-slate-300">{log.nisn}</td>
+                        <td className="py-3 px-2 text-slate-700 dark:text-slate-300">{log.nis}</td>
+                        <td className="py-3 px-2">
+                          <span className={`inline-flex items-center text-xs font-bold px-2 py-1 rounded-full ${
+                            log.found
+                              ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
+                              : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+                          }`}>
+                            {log.found ? 'Ditemukan' : 'Tidak Ditemukan'}
+                          </span>
+                        </td>
+                        <td className="py-3 px-2 text-slate-500 text-xs font-mono">{log.ip}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tab: Pengaturan */}
+        {activeTab === 'settings' && (
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6 max-w-2xl">
+            <h2 className="font-semibold text-slate-800 dark:text-slate-100 mb-6">Pengaturan Situs</h2>
+            <form onSubmit={handleSaveSettings} className="space-y-5">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Nama Sekolah</label>
+                <input
+                  type="text"
+                  value={settings.schoolName}
+                  onChange={e => setSettings(p => ({ ...p, schoolName: e.target.value }))}
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Nama Kepala Sekolah</label>
+                <input
+                  type="text"
+                  value={settings.principalName}
+                  onChange={e => setSettings(p => ({ ...p, principalName: e.target.value }))}
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">NIP Kepala Sekolah</label>
+                <input
+                  type="text"
+                  value={settings.principalNip}
+                  onChange={e => setSettings(p => ({ ...p, principalNip: e.target.value }))}
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Tanggal &amp; Waktu Pengumuman</label>
+                <input
+                  type="datetime-local"
+                  value={settings.announcementDate.slice(0, 16)}
+                  onChange={e => setSettings(p => ({ ...p, announcementDate: e.target.value + ':00' }))}
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setSettings(p => ({ ...p, announcementActive: !p.announcementActive }))}
+                  className={`relative w-12 h-6 rounded-full transition-colors ${settings.announcementActive ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-600'}`}
+                >
+                  <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${settings.announcementActive ? 'translate-x-6' : ''}`} />
+                </button>
+                <span className="text-sm text-slate-700 dark:text-slate-300">
+                  Pengumuman {settings.announcementActive ? 'Aktif' : 'Tidak Aktif'}
+                </span>
+              </div>
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  type="submit"
+                  disabled={savingSettings}
+                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition disabled:opacity-60"
+                >
+                  {savingSettings ? 'Menyimpan...' : 'Simpan Pengaturan'}
+                </button>
+                {settingsSaved && (
+                  <span className="text-emerald-600 dark:text-emerald-400 text-sm font-medium flex items-center gap-1">
+                    <Check className="w-4 h-4" /> Tersimpan!
+                  </span>
+                )}
+              </div>
+            </form>
+          </div>
+        )}
       </div>
     </div>
   )

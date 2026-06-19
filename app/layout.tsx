@@ -9,6 +9,7 @@ export const metadata: Metadata = {
   title: 'Pengumuman Kelulusan Kelas XII 2026',
   description: 'Sistem Pengumuman Kelulusan Kelas XII Tahun Ajaran 2025/2026',
   keywords: ['kelulusan', 'pengumuman', 'kelas XII', '2026', 'SMA'],
+  manifest: '/manifest.json',
   openGraph: {
     title: 'Pengumuman Kelulusan Kelas XII 2026',
     description: 'Sistem Pengumuman Kelulusan Kelas XII Tahun Ajaran 2025/2026',
@@ -23,6 +24,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="id" suppressHydrationWarning>
+      <head>
+        <meta name="theme-color" content="#2563EB" />
+        <link rel="manifest" href="/manifest.json" />
+      </head>
       <body className={inter.className}>
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
           {children}

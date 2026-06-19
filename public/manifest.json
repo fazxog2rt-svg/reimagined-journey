@@ -1,0 +1,19 @@
+{
+  "name": "Pengumuman Kelulusan Kelas XII 2026",
+  "short_name": "Kelulusan 2026",
+  "description": "Sistem Pengumuman Kelulusan Siswa Kelas XII Tahun Ajaran 2025/2026",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0F172A",
+  "theme_color": "#2563EB",
+  "orientation": "portrait",
+  "categories": ["education"],
+  "icons": [
+    {
+      "src": "/globe.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
