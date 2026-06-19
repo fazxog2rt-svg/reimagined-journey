@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { students } from '@/lib/students'
+import { studentsStore } from '@/lib/store'
 import { addLog } from '@/lib/activity-log'
 
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>()
@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
   const sanitizedNisn = String(nisn).replace(/\D/g, '').slice(0, 20)
   const sanitizedNis = String(nis).replace(/[^a-zA-Z0-9]/g, '').slice(0, 20).toUpperCase()
 
-  const student = students.find(s => s.nisn === sanitizedNisn && s.nis === sanitizedNis)
+  const student = studentsStore.find(s => s.nisn === sanitizedNisn && s.nis === sanitizedNis)
   addLog(sanitizedNisn, sanitizedNis, !!student, ip)
 
   if (!student) {

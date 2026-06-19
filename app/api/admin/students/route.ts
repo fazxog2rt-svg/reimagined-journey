@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyToken } from '@/lib/auth'
-import { students as initialStudents, Student } from '@/lib/students'
-
-let studentsData: Student[] = [...initialStudents]
+import { studentsStore, addStudent, updateStudent, deleteStudent } from '@/lib/store'
+import { Student } from '@/lib/students'
 
 async function checkAuth(req: NextRequest) {
   const authHeader = req.headers.get('authorization')
@@ -14,15 +13,14 @@ async function checkAuth(req: NextRequest) {
 export async function GET(req: NextRequest) {
   const payload = await checkAuth(req)
   if (!payload) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  return NextResponse.json({ students: studentsData })
+  return NextResponse.json({ students: studentsStore })
 }
 
 export async function POST(req: NextRequest) {
   const payload = await checkAuth(req)
   if (!payload) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const body = await req.json()
-  const newStudent: Student = {
-    id: Math.max(...studentsData.map(s => s.id), 0) + 1,
+  const data: Omit<Student, 'id'> = {
     name: body.name,
     nisn: body.nisn,
     nis: body.nis,
@@ -30,7 +28,7 @@ export async function POST(req: NextRequest) {
     ...(body.keterangan ? { keterangan: body.keterangan } : {}),
     ...(body.phone ? { phone: body.phone } : {}),
   }
-  studentsData.push(newStudent)
+  const newStudent = addStudent(data)
   return NextResponse.json({ student: newStudent }, { status: 201 })
 }
 
@@ -38,18 +36,15 @@ export async function PUT(req: NextRequest) {
   const payload = await checkAuth(req)
   if (!payload) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const body = await req.json()
-  const index = studentsData.findIndex(s => s.id === body.id)
-  if (index === -1) return NextResponse.json({ error: 'Student not found' }, { status: 404 })
-  const updated = { ...studentsData[index], ...body }
-  if (updated.status === 'LULUS') { delete updated.keterangan }
-  studentsData[index] = updated
-  return NextResponse.json({ student: studentsData[index] })
+  const updated = updateStudent(body.id, body)
+  if (!updated) return NextResponse.json({ error: 'Student not found' }, { status: 404 })
+  return NextResponse.json({ student: updated })
 }
 
 export async function DELETE(req: NextRequest) {
   const payload = await checkAuth(req)
   if (!payload) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { id } = await req.json()
-  studentsData = studentsData.filter(s => s.id !== id)
+  deleteStudent(id)
   return NextResponse.json({ success: true })
 }
