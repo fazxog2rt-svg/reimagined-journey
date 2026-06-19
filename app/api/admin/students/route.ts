@@ -40,7 +40,9 @@ export async function PUT(req: NextRequest) {
   const body = await req.json()
   const index = studentsData.findIndex(s => s.id === body.id)
   if (index === -1) return NextResponse.json({ error: 'Student not found' }, { status: 404 })
-  studentsData[index] = { ...studentsData[index], ...body }
+  const updated = { ...studentsData[index], ...body }
+  if (updated.status === 'LULUS') { delete updated.keterangan }
+  studentsData[index] = updated
   return NextResponse.json({ student: studentsData[index] })
 }
 
