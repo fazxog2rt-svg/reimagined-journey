@@ -1,0 +1,21 @@
+{
+  "name": "wa-bot-server",
+  "version": "1.0.0",
+  "description": "WhatsApp Bot Server using Baileys for graduation announcement system",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.16",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "pino": "^9.4.0",
+    "pino-pretty": "^11.2.2",
+    "qrcode": "^1.5.4"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -25,5 +25,7 @@ export async function PUT(req: NextRequest) {
   if (body.accessTimeEnabled !== undefined) siteSettings.accessTimeEnabled = Boolean(body.accessTimeEnabled)
   if (body.waBotEnabled !== undefined) siteSettings.waBotEnabled = Boolean(body.waBotEnabled)
   if (body.waPhoneNumber !== undefined) siteSettings.waPhoneNumber = String(body.waPhoneNumber).slice(0, 20)
+  if (body.waBotServerUrl !== undefined) siteSettings.waBotServerUrl = String(body.waBotServerUrl).slice(0, 500)
+  if (body.waBotApiKey !== undefined) siteSettings.waBotApiKey = String(body.waBotApiKey).slice(0, 200)
   return NextResponse.json({ settings: siteSettings })
 }

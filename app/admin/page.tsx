@@ -53,10 +53,12 @@ interface SiteSettings {
   accessTimeEnabled: boolean
   waBotEnabled: boolean
   waPhoneNumber: string
+  waBotServerUrl: string
+  waBotApiKey: string
 }
 
 interface WaBotState {
-  status: 'disconnected' | 'qr' | 'connected'
+  status: 'disconnected' | 'qr' | 'qr_ready' | 'connected' | 'connecting' | 'no_server' | 'error'
   qr?: string
   phone?: string
 }
@@ -104,6 +106,8 @@ export default function AdminPage() {
     accessTimeEnabled: false,
     waBotEnabled: false,
     waPhoneNumber: '',
+    waBotServerUrl: '',
+    waBotApiKey: '',
   })
   const [savingSettings, setSavingSettings] = useState(false)
   const [settingsSaved, setSettingsSaved] = useState(false)
@@ -173,7 +177,22 @@ export default function AdminPage() {
     try {
       const res = await fetch('/api/admin/wa-bot', { headers: { Authorization: `Bearer ${token}` } })
       const data = await res.json()
-      if (res.ok) setWaBotState(data)
+      if (res.ok) {
+        // If connecting/qr_ready, also try to fetch the QR image
+        if (data.status === 'qr_ready' || data.hasQR) {
+          const qrRes = await fetch('/api/admin/wa-bot', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ action: 'qr' }),
+          })
+          if (qrRes.ok) {
+            const qrData = await qrRes.json()
+            setWaBotState({ ...data, status: 'qr', qr: qrData.qr })
+            return
+          }
+        }
+        setWaBotState(data)
+      }
     } catch {}
   }
 
@@ -298,7 +317,17 @@ export default function AdminPage() {
         body: JSON.stringify({ action: 'connect' }),
       })
       const data = await res.json()
-      if (res.ok) setWaBotState(data)
+      if (res.ok) setWaBotState({ ...data, status: data.status === 'connecting' ? 'connecting' : data.status })
+      // Start polling for QR / connected status
+      let attempts = 0
+      const poll = setInterval(async () => {
+        attempts++
+        await fetchWaBot()
+        const currentState = await fetch('/api/admin/wa-bot', { headers: { Authorization: `Bearer ${token}` } })
+          .then(r => r.json()).catch(() => null)
+        if (!currentState) { clearInterval(poll); return }
+        if (currentState.status === 'connected' || attempts > 30) clearInterval(poll)
+      }, 3000)
     } finally { setWaBotLoading(false) }
   }
 
@@ -311,8 +340,40 @@ export default function AdminPage() {
         body: JSON.stringify({ action: 'disconnect' }),
       })
       const data = await res.json()
-      if (res.ok) setWaBotState(data)
+      if (res.ok) setWaBotState({ status: 'disconnected' })
     } finally { setWaBotLoading(false) }
+  }
+
+  const sendViaBot = async (student: Student) => {
+    const msg = INVITE_MESSAGE(student.name, settings.schoolName)
+    const res = await fetch('/api/admin/wa-bot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ action: 'send', phone: student.phone, message: msg }),
+    })
+    if (res.ok) setSentCount(c => c + 1)
+    else alert('Gagal kirim via bot. Pastikan bot terhubung.')
+  }
+
+  const sendAllViaBot = async () => {
+    const lulusWithPhone = students.filter(s => s.status === 'LULUS' && s.phone)
+    if (lulusWithPhone.length === 0) { alert('Tidak ada siswa LULUS dengan nomor HP.'); return }
+    if (!confirm(`Kirim ${lulusWithPhone.length} undangan via WA Bot?`)) return
+    const recipients = lulusWithPhone.map(s => ({
+      phone: s.phone!,
+      message: INVITE_MESSAGE(s.name, settings.schoolName),
+    }))
+    const res = await fetch('/api/admin/wa-bot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ action: 'send-bulk', recipients }),
+    })
+    const data = await res.json()
+    if (res.ok) {
+      const success = data.results?.filter((r: { success: boolean }) => r.success).length || 0
+      alert(`Berhasil terkirim: ${success}/${lulusWithPhone.length}`)
+      setSentCount(c => c + success)
+    } else alert('Gagal kirim bulk. Pastikan bot terhubung.')
   }
 
   const allKelas = Array.from(new Set(students.map(s => s.kelas).filter(Boolean))).sort() as string[]
@@ -809,18 +870,40 @@ export default function AdminPage() {
                 <span className={`flex items-center gap-2 text-sm font-bold px-3 py-1 rounded-full ${
                   waBotState.status === 'connected'
                     ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
-                    : waBotState.status === 'qr'
+                    : (waBotState.status === 'qr' || waBotState.status === 'qr_ready')
                       ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
-                      : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
+                      : waBotState.status === 'connecting'
+                        ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                        : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
                 }`}>
-                  <span className={`w-2 h-2 rounded-full ${waBotState.status === 'connected' ? 'bg-emerald-500' : waBotState.status === 'qr' ? 'bg-amber-500 animate-pulse' : 'bg-slate-400'}`} />
-                  {waBotState.status === 'connected' ? 'Terhubung' : waBotState.status === 'qr' ? 'Menunggu Scan QR' : 'Tidak Terhubung'}
+                  <span className={`w-2 h-2 rounded-full ${
+                    waBotState.status === 'connected' ? 'bg-emerald-500'
+                    : (waBotState.status === 'qr' || waBotState.status === 'qr_ready') ? 'bg-amber-500 animate-pulse'
+                    : waBotState.status === 'connecting' ? 'bg-blue-500 animate-pulse'
+                    : 'bg-slate-400'
+                  }`} />
+                  {waBotState.status === 'connected' ? 'Terhubung'
+                    : (waBotState.status === 'qr' || waBotState.status === 'qr_ready') ? 'Menunggu Scan QR'
+                    : waBotState.status === 'connecting' ? 'Menghubungkan...'
+                    : waBotState.status === 'no_server' ? 'Server Belum Dikonfigurasi'
+                    : 'Tidak Terhubung'}
                 </span>
               </div>
 
-              {waBotState.status === 'disconnected' && (
+              {waBotState.status === 'no_server' && (
+                <div className="text-center py-6">
+                  <div className="text-5xl mb-3">⚙️</div>
+                  <p className="text-slate-500 dark:text-slate-400 text-sm mb-2">URL server WA Bot belum diatur.</p>
+                  <p className="text-slate-400 dark:text-slate-500 text-xs">Isi URL server dan API key di tab <strong>Pengaturan</strong> terlebih dahulu.</p>
+                </div>
+              )}
+
+              {(waBotState.status === 'disconnected' || waBotState.status === 'error') && (
                 <div className="text-center py-6">
                   <div className="text-5xl mb-3">📱</div>
+                  {waBotState.status === 'error' && (
+                    <p className="text-red-500 text-sm mb-2">Tidak dapat terhubung ke server WA Bot. Pastikan server berjalan.</p>
+                  )}
                   <p className="text-slate-500 dark:text-slate-400 text-sm mb-4">Bot belum terhubung. Klik tombol di bawah untuk memulai koneksi.</p>
                   <button onClick={handleWaBotConnect} disabled={waBotLoading}
                     className="px-6 py-3 rounded-xl font-bold text-white disabled:opacity-60 transition"
@@ -830,15 +913,23 @@ export default function AdminPage() {
                 </div>
               )}
 
-              {waBotState.status === 'qr' && waBotState.qr && (
+              {waBotState.status === 'connecting' && (
+                <div className="text-center py-6">
+                  <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+                  <p className="text-slate-500 dark:text-slate-400 text-sm">Menghubungkan ke server WhatsApp, QR code akan muncul sebentar lagi...</p>
+                  <button onClick={fetchWaBot} className="mt-3 text-xs text-blue-600 dark:text-blue-400 hover:underline">Refresh status</button>
+                </div>
+              )}
+
+              {(waBotState.status === 'qr' || waBotState.status === 'qr_ready') && waBotState.qr && (
                 <div className="text-center py-4">
                   <p className="text-sm font-medium text-slate-600 dark:text-slate-400 mb-4">Buka WhatsApp &gt; Perangkat Tertaut &gt; Pindai QR code berikut:</p>
                   <div className="inline-block p-4 bg-white rounded-2xl shadow-md border border-slate-200">
                     <img src={waBotState.qr} alt="QR Code WhatsApp" className="w-56 h-56" />
                   </div>
-                  <p className="text-xs text-slate-400 mt-3">QR code berlaku selama 60 detik</p>
+                  <p className="text-xs text-slate-400 mt-3">QR code berlaku selama 60 detik — perbarui jika kadaluarsa</p>
                   <div className="flex gap-2 justify-center mt-4">
-                    <button onClick={handleWaBotConnect} disabled={waBotLoading}
+                    <button onClick={fetchWaBot} disabled={waBotLoading}
                       className="px-4 py-2 rounded-xl text-sm font-medium border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition">
                       Perbarui QR
                     </button>
@@ -850,19 +941,34 @@ export default function AdminPage() {
                 </div>
               )}
 
+              {(waBotState.status === 'qr' || waBotState.status === 'qr_ready') && !waBotState.qr && (
+                <div className="text-center py-4">
+                  <div className="w-8 h-8 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+                  <p className="text-sm text-slate-500">Menunggu QR code dari server...</p>
+                  <button onClick={fetchWaBot} className="mt-2 text-xs text-blue-600 dark:text-blue-400 hover:underline">Refresh</button>
+                </div>
+              )}
+
               {waBotState.status === 'connected' && (
                 <div className="space-y-3">
                   <div className="flex items-center gap-3 p-4 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800">
                     <span className="text-2xl">✅</span>
                     <div>
                       <p className="font-bold text-emerald-700 dark:text-emerald-400">Bot Terhubung</p>
-                      <p className="text-sm text-emerald-600 dark:text-emerald-500">{waBotState.phone || 'Nomor tidak diketahui'}</p>
+                      <p className="text-sm text-emerald-600 dark:text-emerald-500">{waBotState.phone ? `+${waBotState.phone}` : 'Nomor tidak diketahui'}</p>
                     </div>
                   </div>
-                  <button onClick={handleWaBotDisconnect} disabled={waBotLoading}
-                    className="w-full py-2.5 rounded-xl font-medium text-sm bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-200 transition">
-                    {waBotLoading ? 'Memproses...' : '🔌 Putuskan Koneksi'}
-                  </button>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button onClick={sendAllViaBot}
+                      className="py-2.5 rounded-xl font-medium text-sm text-white transition"
+                      style={{ background: 'linear-gradient(135deg,#25D366,#128C7E)' }}>
+                      📨 Kirim Semua Undangan
+                    </button>
+                    <button onClick={handleWaBotDisconnect} disabled={waBotLoading}
+                      className="py-2.5 rounded-xl font-medium text-sm bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-200 transition">
+                      {waBotLoading ? 'Memproses...' : '🔌 Putuskan Koneksi'}
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -1059,12 +1165,28 @@ export default function AdminPage() {
                 )}
               </div>
 
-              {/* WA bot phone */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Nomor WA Bot</label>
-                <input type="tel" value={settings.waPhoneNumber} onChange={e => setSettings(p => ({ ...p, waPhoneNumber: e.target.value }))}
-                  placeholder="628xxxxxxxxxx"
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              {/* WA bot settings */}
+              <div className="space-y-3 p-4 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/30">
+                <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">📱 WhatsApp Bot Server</p>
+                <div>
+                  <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">URL Server Baileys</label>
+                  <input type="url" value={settings.waBotServerUrl} onChange={e => setSettings(p => ({ ...p, waBotServerUrl: e.target.value }))}
+                    placeholder="http://ip-server-kamu:3001"
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">API Key Server</label>
+                  <input type="text" value={settings.waBotApiKey} onChange={e => setSettings(p => ({ ...p, waBotApiKey: e.target.value }))}
+                    placeholder="wa-bot-secret-2026"
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Nomor WA Bot (opsional, info saja)</label>
+                  <input type="tel" value={settings.waPhoneNumber} onChange={e => setSettings(p => ({ ...p, waPhoneNumber: e.target.value }))}
+                    placeholder="628xxxxxxxxxx"
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <p className="text-xs text-slate-400 dark:text-slate-500">Deploy <code className="bg-slate-200 dark:bg-slate-600 px-1 rounded">wa-server/</code> di server kamu, lalu isi URL dan API key di sini.</p>
               </div>
 
               <div className="flex items-center gap-3 pt-2">

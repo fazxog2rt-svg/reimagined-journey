@@ -11,6 +11,8 @@ export interface SiteSettings {
   accessTimeEnabled: boolean
   waBotEnabled: boolean
   waPhoneNumber: string
+  waBotServerUrl: string
+  waBotApiKey: string
 }
 
 export const siteSettings: SiteSettings = {
@@ -26,4 +28,6 @@ export const siteSettings: SiteSettings = {
   accessTimeEnabled: false,
   waBotEnabled: false,
   waPhoneNumber: '',
+  waBotServerUrl: '',
+  waBotApiKey: '',
 }
