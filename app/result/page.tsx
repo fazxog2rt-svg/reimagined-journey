@@ -436,13 +436,53 @@ function ResultContent() {
             </motion.div>
 
             {/* Info box for TIDAK LULUS */}
-            {student.status === 'TIDAK LULUS' && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }}
-                className="p-4 rounded-2xl bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800 text-sm text-orange-700 dark:text-orange-300 mb-6">
-                <p className="font-bold mb-1">📋 Langkah Selanjutnya:</p>
-                <p>Segera hubungi guru pembimbing atau wali kelas Anda untuk menyelesaikan kewajiban yang belum terpenuhi. Setelah semua persyaratan terpenuhi, kelulusan dapat diproses kembali.</p>
-              </motion.div>
-            )}
+            {student.status === 'TIDAK LULUS' && (() => {
+              const wisudaDate = new Date('2026-06-25T08:00:00')
+              const now = new Date()
+              const isWisudaDay = now >= wisudaDate
+              const diffMs = wisudaDate.getTime() - now.getTime()
+              const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24))
+
+              return (
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }} className="space-y-3 mb-6">
+                  {/* Pesan standar sebelum wisuda */}
+                  {!isWisudaDay && (
+                    <div className="p-4 rounded-2xl bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800 text-sm text-orange-700 dark:text-orange-300">
+                      <p className="font-bold mb-1">📋 Langkah Selanjutnya:</p>
+                      <p>Segera hubungi guru pembimbing atau wali kelas Anda untuk menyelesaikan kewajiban yang belum terpenuhi. Setelah semua persyaratan terpenuhi, kelulusan dapat diproses kembali.</p>
+                      <p className="mt-2 text-xs font-semibold">⏳ Wisuda akan berlangsung dalam <span className="text-orange-600 dark:text-orange-400">{diffDays} hari lagi</span>. Segera selesaikan sebelum terlambat!</p>
+                    </div>
+                  )}
+
+                  {/* Pesan khusus saat/setelah hari wisuda */}
+                  {isWisudaDay && (
+                    <div className="p-5 rounded-2xl border-2 border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-950/40">
+                      <p className="text-lg font-black text-red-700 dark:text-red-400 mb-2">🔔 Hari Wisuda Telah Tiba</p>
+                      <p className="text-sm text-red-600 dark:text-red-300 mb-3">
+                        Hari ini, <strong>25 Juni 2026</strong>, wisuda kelas XII sedang berlangsung di <strong>The Grand Livina, Cibubur</strong>. Sayangnya, Anda belum memenuhi persyaratan kelulusan.
+                      </p>
+                      <div className="bg-white dark:bg-slate-800 rounded-xl p-3 text-sm space-y-2 border border-red-200 dark:border-red-800 mb-3">
+                        <p className="font-bold text-slate-700 dark:text-slate-200">📌 Yang perlu segera dilakukan:</p>
+                        <ul className="space-y-1 text-slate-600 dark:text-slate-300 list-none">
+                          <li>📞 Hubungi wali kelas <strong>SEKARANG JUGA</strong></li>
+                          <li>🏫 Datang ke sekolah setelah acara wisuda selesai</li>
+                          <li>📝 Selesaikan seluruh kewajiban yang tertunda</li>
+                          <li>📋 Ajukan permohonan penyelesaian kepada kepala sekolah</li>
+                        </ul>
+                      </div>
+                      <p className="text-xs text-red-500 dark:text-red-400 font-semibold">
+                        ⚠️ Kelulusan susulan masih dapat diproses setelah semua persyaratan terpenuhi. Jangan menyerah!
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Pesan motivasi untuk yang belum lulus */}
+                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-700/40 border border-slate-200 dark:border-slate-600 text-sm text-slate-600 dark:text-slate-300 italic text-center">
+                    &ldquo;Kegagalan bukan akhir dari segalanya. Setiap rintangan adalah kesempatan untuk bangkit lebih kuat. Terus berjuang, karena setiap usaha tidak pernah sia-sia.&rdquo;
+                  </div>
+                </motion.div>
+              )
+            })()}
 
             {/* Graduation event info - only for LULUS */}
             {student.status === 'LULUS' && (
