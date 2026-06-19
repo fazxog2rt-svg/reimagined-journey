@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
 import { ThemeProvider } from 'next-themes'
+import SecurityGuardWrapper from '@/components/SecurityGuardWrapper'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -28,8 +29,9 @@ export default function RootLayout({
         <meta name="theme-color" content="#2563EB" />
         <link rel="manifest" href="/manifest.json" />
       </head>
-      <body className={inter.className}>
+      <body className={inter.className} style={{ userSelect: 'none' }}>
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
+          <SecurityGuardWrapper />
           {children}
         </ThemeProvider>
       </body>
